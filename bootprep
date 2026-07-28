@@ -1,0 +1,461 @@
+#!/usr/bin/env bash
+#
+# BootPrep
+# Version 1.0
+# Build 0005 Phase 2
+#
+# Purpose
+# -------
+# Boot preparation engine for Debian and Ubuntu-based systems using
+# Snapper with the default nested Btrfs snapshot layout.
+#
+
+set -euo pipefail
+
+###############################################################################
+# Global State
+###############################################################################
+
+PROGRAM="bootprep"
+VERSION="1.0"
+BUILD="0005 Phase 2"
+
+DEBUG="${DEBUG:-false}"
+
+COMMAND="${1:-}"
+SNAPSHOT_ID="${2:-}"
+
+ROOT_DEVICE=""
+SNAPSHOT_SUBVOL=""
+WORKDIR=""
+MOUNTPOINT=""
+ROOT_SUBVOL=""
+EFI_VENDOR=""
+EFI_GRUB_CFG=""
+
+BOOTPREP_STATE_DIR="/var/lib/bootprep"
+BOOTPREP_STATE_FILE="${BOOTPREP_STATE_DIR}/next-boot"
+EFI_BACKUP_DIR="${BOOTPREP_STATE_DIR}/efi-backups"
+EFI_BACKUP_KEEP=10
+
+###############################################################################
+# Output
+###############################################################################
+
+log() { printf '[INFO]  %s\n' "$*"; }
+
+dbg() {
+
+    if [[ "$DEBUG" == "true" ]]; then
+        printf '[DEBUG] %s\n' "$*"
+    fi
+
+    return 0
+
+}
+
+die() { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
+
+transaction_ok() {
+    printf '[ OK ] %s\n' "$1"
+    return 0
+}
+
+transaction_fail() {
+    die "$1"
+}
+
+###############################################################################
+# Validation
+###############################################################################
+
+validate() {
+
+    [[ $EUID -eq 0 ]] \
+        || die "Must be run as root."
+
+    case "$COMMAND" in
+        prepare)
+            ;;
+        *)
+            die "Usage: $0 prepare <snapshot-number>"
+            ;;
+    esac
+
+    [[ "$SNAPSHOT_ID" =~ ^[0-9]+$ ]] \
+        || die "Usage: $0 prepare <snapshot-number>"
+
+    return 0
+}
+
+###############################################################################
+# Snapshot Discovery
+###############################################################################
+
+discover_snapshot() {
+
+    ROOT_DEVICE="$(findmnt -n -o SOURCE /)"
+    ROOT_DEVICE="${ROOT_DEVICE%%[*}"
+
+    ROOT_SUBVOL="$(
+        findmnt -n -o OPTIONS / |
+        sed -n 's/.*subvol=\/\([^,]*\).*/\1/p'
+    )"
+
+    SNAPSHOT_SUBVOL="$(
+        btrfs subvolume list / |
+        awk -v id="$SNAPSHOT_ID" '
+            {
+                sub(/^.* path /,"")
+
+                compare = $0
+                sub(/^@\//, "", compare)
+
+                if (compare == ".snapshots/" id "/snapshot") {
+                    print compare
+                    exit
+                }
+            }
+        '
+    )"
+
+    [[ -n "$SNAPSHOT_SUBVOL" ]] \
+        || transaction_fail "Snapshot not found."
+
+    # Normalize the base root subvolume.
+    # If we're currently booted into a rollback snapshot, ROOT_SUBVOL will be
+    # "@/.snapshots/<id>/snapshot". Convert that back to "@" before constructing
+    # the target snapshot path.
+
+    BASE_SUBVOL="$ROOT_SUBVOL"
+
+    if [[ "$BASE_SUBVOL" == @/.snapshots/* ]]; then
+        BASE_SUBVOL="@"
+    fi
+
+    SNAPSHOT_SUBVOL="${BASE_SUBVOL}/${SNAPSHOT_SUBVOL}"
+
+    dbg "Root device     : $ROOT_DEVICE"
+    dbg "Root subvolume  : $ROOT_SUBVOL"
+    dbg "Snapshot subvol : $SNAPSHOT_SUBVOL"
+
+    transaction_ok "Snapshot located"
+    return 0
+}
+
+###############################################################################
+# Snapshot Mounting
+###############################################################################
+
+mount_snapshot() {
+
+    WORKDIR="$(mktemp -d /run/${PROGRAM}.XXXXXX)"
+    MOUNTPOINT="$WORKDIR/snapshot"
+
+    mkdir -p "$MOUNTPOINT"
+
+    log "Mounting rollback snapshot..."
+
+    mount -t btrfs -o "subvol=$SNAPSHOT_SUBVOL" "$ROOT_DEVICE" "$MOUNTPOINT"
+
+    mountpoint -q "$MOUNTPOINT" \
+        || transaction_fail "Snapshot mount failed."
+
+    findmnt "$MOUNTPOINT" >/dev/null \
+        || transaction_fail "Mounted snapshot could not be verified."
+
+    transaction_ok "Snapshot mounted"
+
+    for d in dev proc sys run; do
+        mount --bind "/$d" "$MOUNTPOINT/$d"
+        mountpoint -q "$MOUNTPOINT/$d" || transaction_fail "Failed to bind $d"
+    done
+
+    transaction_ok "Bind mounts"
+    return 0
+}
+
+###############################################################################
+# GRUB Preparation
+###############################################################################
+
+prepare_grub() {
+
+    log "Verifying snapshot root..."
+    chroot "$MOUNTPOINT" findmnt /
+
+    log "Running update-grub with sanitized environment..."
+
+    chroot "$MOUNTPOINT" /usr/bin/env -i         HOME=/root         PATH=/usr/sbin:/usr/bin:/sbin:/bin         LANG="${LANG:-C}"         TERM="${TERM:-linux}"         TMPDIR=/tmp         TMP=/tmp         TEMP=/tmp         TEMPDIR=/tmp         /usr/sbin/update-grub
+
+    [[ -f "$MOUNTPOINT/boot/grub/grub.cfg" ]]         || die "boot/grub/grub.cfg not found after update-grub."
+
+    [[ -f "${MOUNTPOINT}/boot/grub/grub.cfg" ]] \
+        || transaction_fail "Snapshot grub.cfg was not generated."
+
+    transaction_ok "GRUB regenerated"
+
+    return 0
+}
+
+###############################################################################
+# EFI Discovery
+###############################################################################
+
+discover_efi() {
+
+    log "Discovering EFI GRUB configuration..."
+
+    mountpoint -q /boot/efi \
+        || transaction_fail "/boot/efi is not mounted."
+
+    [[ -r /etc/os-release ]] \
+        || transaction_fail "/etc/os-release not found."
+
+    # shellcheck disable=SC1091
+    source /etc/os-release
+
+    dbg "OS ID          : ${ID:-unknown}"
+    dbg "OS ID_LIKE     : ${ID_LIKE:-}"
+
+    EFI_GRUB_CFG="/boot/efi/EFI/${ID}/grub.cfg"
+
+    if [[ -r "$EFI_GRUB_CFG" ]]; then
+        EFI_VENDOR="$ID"
+
+    elif [[ -n "${ID_LIKE:-}" ]]; then
+        for like in $ID_LIKE; do
+
+            EFI_GRUB_CFG="/boot/efi/EFI/${like}/grub.cfg"
+
+            if [[ -r "$EFI_GRUB_CFG" ]]; then
+                EFI_VENDOR="$like"
+                break
+            fi
+
+        done
+    fi
+
+    [[ -n "$EFI_VENDOR" ]] \
+        || transaction_fail "Unable to locate EFI grub.cfg using ID or ID_LIKE."
+
+    log "EFI Vendor      : $EFI_VENDOR"
+    log "EFI GRUB Config : $EFI_GRUB_CFG"
+
+    transaction_ok "EFI GRUB discovered"
+    return 0
+}
+
+
+
+
+###############################################################################
+# EFI Backup
+###############################################################################
+
+backup_efi() {
+
+    log "Backing up EFI GRUB configuration..."
+
+    [[ -n "${EFI_GRUB_CFG:-}" ]] \
+        || transaction_fail "EFI GRUB configuration has not been discovered."
+
+    mkdir -p "$EFI_BACKUP_DIR"
+
+    BACKUP_FILE="${EFI_BACKUP_DIR}/grub.cfg.$(date +%Y%m%d-%H%M%S)"
+
+    cp -a "$EFI_GRUB_CFG" "$BACKUP_FILE"
+
+    cmp -s "${EFI_GRUB_CFG}" "${BACKUP_FILE}" \
+        || transaction_fail "EFI backup verification failed."
+
+    [[ -r "$BACKUP_FILE" ]] \
+        || transaction_fail "EFI GRUB backup failed."
+
+    log "EFI Backup      : $BACKUP_FILE"
+
+    transaction_ok "EFI GRUB backed up"
+    return 0
+}
+
+###############################################################################
+# EFI Patch
+###############################################################################
+
+patch_efi() {
+
+    log "Patching EFI GRUB configuration..."
+
+    [[ -r "$EFI_GRUB_CFG" ]] \
+        || transaction_fail "EFI GRUB configuration not available."
+
+    # There must be exactly one prefix line.
+    [[ "$(grep -c '^set prefix=' "$EFI_GRUB_CFG")" -eq 1 ]] \
+        || transaction_fail "Expected exactly one GRUB prefix line."
+
+    local tmpfile
+    tmpfile="$(mktemp)" || transaction_fail "Unable to create temporary file."
+
+    local grub_subvol="$SNAPSHOT_SUBVOL"
+
+    # GRUB expects the subvolume path to begin with "/"
+    [[ "$grub_subvol" == /* ]] || grub_subvol="/$grub_subvol"
+
+    awk -v prefix="$grub_subvol" '
+    BEGIN {
+        changed = 0
+    }
+
+    /^set prefix=/ {
+        print "set prefix=($root)\047" prefix "/boot/grub\047"
+        changed++
+        next
+    }
+
+    {
+        print
+    }
+
+    END {
+        if (changed != 1)
+            exit 1
+    }
+    ' "$EFI_GRUB_CFG" > "$tmpfile" \
+        || {
+            rm -f "$tmpfile"
+            transaction_fail "Failed to rewrite EFI GRUB configuration."
+        }
+
+    if ! grep -Fxq "set prefix=(\$root)'${grub_subvol}/boot/grub'" "$tmpfile"; then
+        rm -f "$tmpfile"
+        transaction_fail "EFI GRUB patch verification failed."
+    fi
+
+    cp -a "$tmpfile" "$EFI_GRUB_CFG"
+
+    cmp -s "$tmpfile" "$EFI_GRUB_CFG" \
+        || {
+            rm -f "$tmpfile"
+            transaction_fail "EFI GRUB verification failed."
+        }
+
+    rm -f "$tmpfile"
+
+    transaction_ok "EFI GRUB patched"
+    return 0
+}
+
+write_state() {
+
+    log "Writing BootPrep transaction state..."
+
+    mkdir -p "${BOOTPREP_STATE_DIR}"
+
+    [[ -d "${BOOTPREP_STATE_DIR}" ]] \
+    || transaction_fail "BootPrep state directory does not exist."
+
+    cat > "${BOOTPREP_STATE_FILE}" <<EOF
+BOOTPREP_SUBVOLUME=${SNAPSHOT_SUBVOL}
+BOOTPREP_SNAPSHOT_ID=${SNAPSHOT_ID}
+BOOTPREP_STATUS=PENDING
+EOF
+
+    [[ -f "${BOOTPREP_STATE_FILE}" ]] || transaction_fail "Unable to write BootPrep state."
+
+    transaction_ok "Transaction state written"
+    return 0
+}
+
+cleanup_efi_backups() {
+
+    [[ -d "$EFI_BACKUP_DIR" ]] || return 0
+
+    mapfile -t backups < <(
+        find "$EFI_BACKUP_DIR" \
+            -maxdepth 1 \
+            -type f \
+            -name 'grub.cfg.*' \
+            | sort
+    )
+
+    local count=${#backups[@]}
+
+    (( count <= EFI_BACKUP_KEEP )) && return 0
+
+    local remove=$((count - EFI_BACKUP_KEEP))
+
+    log "Removing $remove old EFI backup(s)..."
+
+    for ((i=0; i<remove; i++)); do
+        rm -f "${backups[$i]}"
+    done
+
+    transaction_ok "EFI backup retention complete"
+    return 0
+}
+
+
+###############################################################################
+# Cleanup
+###############################################################################
+
+cleanup() {
+
+    [[ -n "$MOUNTPOINT" ]] || return 0
+
+    for d in run sys proc dev; do
+        mountpoint -q "$MOUNTPOINT/$d" 2>/dev/null && umount "$MOUNTPOINT/$d" || true
+    done
+
+    mountpoint -q "$MOUNTPOINT" 2>/dev/null && umount "$MOUNTPOINT" || true
+
+    [[ -n "${WORKDIR:-}" && -d "$WORKDIR" ]] && rm -rf "$WORKDIR"
+
+    dbg "Cleanup complete."
+    return 0
+}
+
+###############################################################################
+# Main
+###############################################################################
+
+main() {
+
+cat <<EOF
+=========================================
+ BootPrep
+ Version ${VERSION}
+ Build ${BUILD}
+=========================================
+EOF
+
+    trap cleanup EXIT
+
+    validate
+
+    log "Beginning BootPrep transaction..."
+
+    case "$COMMAND" in
+
+        prepare)
+
+            discover_snapshot
+            mount_snapshot
+            prepare_grub
+            discover_efi
+            backup_efi
+            patch_efi
+            write_state
+            cleanup_efi_backups
+
+            log "BootPrep transaction completed."
+            ;;
+
+    esac
+
+    echo
+    transaction_ok "Snapshot prepared successfully."
+
+}
+
+main "$@"

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# snapper-bootprep
+#
+# Snapper rollback plugin for BootPrep
+#
+
+set -euo pipefail
+
+BOOTPREP="/usr/sbin/bootprep"
+
+# Ignore non-rollback operations.
+case "${1:-}" in
+    rollback*)
+        ;;
+    *)
+        exit 0
+        ;;
+esac
+
+# Ensure BootPrep is installed.
+[[ -x "$BOOTPREP" ]] || {
+    echo "snapper-bootprep: BootPrep not found: $BOOTPREP" >&2
+    exit 1
+}
+
+SNAPSHOT="${5:-}"
+
+[[ -n "$SNAPSHOT" ]] || {
+    echo "snapper-bootprep: No snapshot number supplied." >&2
+    exit 1
+}
+
+echo "snapper-bootprep: Preparing rollback snapshot ${SNAPSHOT}..."
+
+exec "$BOOTPREP" prepare "$SNAPSHOT"
