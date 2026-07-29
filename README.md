@@ -2,62 +2,15 @@
 
 > **Business as usual... until you need it.**
 
-BootPrep is a lightweight boot preparation layer for **Debian, Ubuntu, and their derivatives** using Snapper with the **default nested Btrfs subvolume layout**.
+BootPrep is a lightweight boot preparation layer for **Debian, Ubuntu, and their derivatives** that use Snapper with the **default nested Btrfs subvolume layout**.
 
 Rather than replacing Snapper, changing GRUB's normal boot behavior, or introducing another rollback framework, BootPrep integrates with the existing boot process and remains dormant until a writable rollback snapshot is intentionally prepared for the next boot.
 
-Install BootPrep on a test system today.
+## Background
 
-Continue using the system exactly as usual.
+BootPrep began as a personal effort to expand the native Btrfs and Snapper experience provided by Debian and Ubuntu. While the distributions already provide excellent support for Btrfs, Snapper, and GRUB, there remained a gap between snapshot management and reliably preparing the next boot on systems using the default nested Btrfs layout.
 
-Install and configure Snapper whenever you are ready.
-
-When a rollback snapshot is needed, BootPrep is already present to prepare the next boot.
-
----
-
-## Project Status
-
-**Early Development (0.1.0-dev)**
-
-BootPrep is under active development and is **not intended for production use**.
-
-Development and testing should currently be limited to disposable virtual machines or systems with a verified recovery path.
-
-The current focus is validating the complete boot preparation transaction and its integration with Snapper, Btrfs, GRUB, and UEFI systems.
-
----
-
-## Mission
-
-Snapper already provides snapshot management, rollback, cleanup, and snapshot lifecycle management.
-
-Btrfs already provides subvolume management.
-
-GRUB already provides boot management.
-
-BootPrep intentionally does **not** duplicate or replace any of these components.
-
-Instead, BootPrep prepares the writable rollback snapshot selected by Snapper or another tool so the next reboot enters that snapshot while preserving Debian's normal boot process.
-
----
-
-## Design Philosophy
-
-BootPrep follows one simple principle:
-
-- Let **Snapper** manage snapshots and perform rollbacks.
-- Let **Btrfs** manage subvolumes and the default subvolume.
-- Let **GRUB** manage boot configuration.
-- Let **BootPrep** prepare the next boot.
-
-Each component performs the task it already does well.
-
-BootPrep provides the missing integration between them.
-
-For the detailed component boundaries and transaction flow, see [ARCHITECTURE.md](ARCHITECTURE.md).
-
----
+What started as a proof of concept evolved into BootPrep—a dedicated boot preparation layer that works alongside the tools already provided by the distribution instead of replacing them.
 
 ## Business as Usual
 
@@ -72,7 +25,7 @@ After installation:
 
 The installer places the Snapper plugin in its expected location, but the plugin remains inactive when Snapper is not present and ignores non-rollback operations.
 
-BootPrep does not redirect the next boot until a rollback snapshot is explicitly prepared.
+Nothing changes until a writable snapshot is intentionally prepared for the next boot.
 
 Until then...
 
@@ -87,30 +40,30 @@ BootPrep is currently designed for systems with:
 - Debian, Ubuntu, or a compatible derivative.
 - A Debian-style GRUB installation using `/etc/grub.d/10_linux` and `update-grub`.
 - UEFI boot with the EFI System Partition mounted at `/boot/efi`.
-- A Btrfs root filesystem using the default nested snapshot layout.
+- A Btrfs root filesystem using the default nested subvolume layout.
 - Root snapshots stored beneath `@/.snapshots/<number>/snapshot`.
 
-Systems manually restructured to use a flat or another custom Btrfs subvolume layout are not currently supported.
+Systems manually restructured to use a flat or other custom Btrfs subvolume layout are not currently supported.
 
-Legacy BIOS boot is not currently supported by the implementation.
+Legacy BIOS boot is not currently supported.
 
-Let the operating-system installer create the initial Btrfs layout. BootPrep is designed to integrate with that layout rather than requiring users to redesign it.
+BootPrep is designed to integrate with the filesystem layout created by the operating-system installer rather than requiring users to redesign it.
 
 ---
 
 ## Why BootPrep?
 
-Many snapshot boot solutions expect users to adopt a snapshot-based boot model immediately.
-
-That often means restructuring subvolumes, changing normal boot behavior, or living inside an initial snapshot from the beginning.
+Many snapshot boot solutions expect users to adopt a snapshot-based workflow immediately. That often means restructuring subvolumes, changing normal boot behavior, or living inside an initial snapshot from day one.
 
 BootPrep takes a different approach.
 
 Installation and activation are separate.
 
-You can install BootPrep and continue using the system normally. Later, after Snapper is installed and configured, BootPrep's Snapper plugin can prepare a rollback snapshot automatically when Snapper performs a rollback.
+You can install BootPrep and continue using the system exactly as you do today. Later, after Snapper is installed and configured, BootPrep's Snapper plugin can automatically prepare the next boot whenever Snapper performs a rollback.
 
-Nothing redirects the next boot until **you** initiate the rollback or manually prepare a selected snapshot.
+BootPrep was created to complement—not replace—the tools already provided by Debian and Ubuntu. Snapper continues to manage snapshots, Btrfs continues to manage subvolumes, and GRUB continues to manage boot configuration. BootPrep simply provides the missing integration between them.
+
+Nothing redirects the next boot until **you** initiate a rollback or intentionally prepare a selected snapshot.
 
 ---
 
@@ -129,11 +82,9 @@ The installer also generates:
 - `/usr/lib/bootprep/bootprep-runtime.sh`
 - BootPrep state and backups beneath `/var/lib/bootprep`
 
----
-
 ## Installation
 
-> **Warning:** The installer is still under development. It diverts and patches `/etc/grub.d/10_linux`, updates `/etc/default/grub`, and regenerates the GRUB configuration. Use it only in a test environment with a verified recovery path.
+> **Warning:** The installer is still under development. It diverts and patches `/etc/grub.d/10_linux`, updates `/etc/default/grub`, and regenerates the GRUB configuration. Test it first in an environment with a verified recovery path before deploying it on a daily-use system.
 
 Keep `bootprep`, `bootprep-install.sh`, and `99_bootprep` together in the repository root, then run:
 
@@ -144,15 +95,13 @@ sudo ./bootprep-install.sh
 
 The installer validates the expected Debian-style GRUB layout before applying its integration.
 
-An automated uninstaller is not yet included.
-
 ---
 
 ## Operation
 
 ### Snapper rollback
 
-When Snapper runs a rollback operation, `99_bootprep` receives the selected snapshot number and invokes:
+When Snapper performs a rollback operation, the `99_bootprep` plugin receives the selected snapshot number and invokes:
 
 ```text
 /usr/sbin/bootprep prepare <snapshot-number>
@@ -160,17 +109,19 @@ When Snapper runs a rollback operation, `99_bootprep` receives the selected snap
 
 ### Manual preparation
 
-The engine can also be invoked directly after an external tool has created or selected the writable snapshot and set the appropriate Btrfs default subvolume:
+The BootPrep engine can also be invoked directly after another tool has created or selected the writable snapshot and configured the appropriate Btrfs default subvolume:
 
 ```bash
 sudo bootprep prepare <snapshot-number>
 ```
 
-BootPrep prepares the selected snapshot for the next boot. It does not create the snapshot, select it for you, or perform the Btrfs rollback itself.
+BootPrep prepares the selected snapshot for the next boot. It does **not** create the snapshot, perform the rollback, or manage Btrfs subvolumes. Those responsibilities remain with the tools designed for those tasks.
 
 ---
 
 ## Project Goals
+
+BootPrep is guided by a few simple principles:
 
 - Keep the code simple.
 - Keep responsibilities clearly separated.
@@ -178,15 +129,50 @@ BootPrep prepares the selected snapshot for the next boot. It does not create th
 - Integrate with existing tools instead of replacing them.
 - Minimize changes to upstream GRUB.
 - Support the default nested Btrfs layouts used by Debian, Ubuntu, and their derivatives.
-- Make snapshot booting work without requiring users to redesign their filesystem.
+- Build upon the distributions' default filesystem layout instead of requiring users to redesign it.
+- Make snapshot booting reliable without changing how users normally interact with their systems.
 
 ---
 
 ## Current Development
 
-Current development is focused on validating the BootPrep engine, the `99_bootprep` Snapper rollback plugin, the installer, EFI handling, transaction state, cleanup, and failure recovery.
+Current development is focused on validating the complete boot preparation transaction, including the BootPrep engine, the `99_bootprep` Snapper plugin, installer integration, EFI handling, transaction state management, cleanup, and failure recovery.
 
-Packaging, broader distribution support, and additional automation will follow after the core transaction is proven reliable.
+Future development will expand BootPrep beyond rollback preparation while maintaining the same philosophy of integrating with existing system components rather than replacing them.
+
+Packaging, broader distribution support, and additional automation will follow after the core transaction has been proven reliable.
+
+---
+
+## Companion Utilities
+
+BootPrep is the flagship project in a growing collection of companion utilities designed to enhance the native Btrfs, Snapper, and GRUB experience on Debian, Ubuntu, and their derivatives.
+
+Each utility has a single responsibility and can be used independently or together to enhance the native Btrfs, Snapper, and GRUB experience on Debian, Ubuntu, and their derivatives.
+
+Current companion projects include:
+
+- **cleanup-bootstrap-root** – Safely cleans the original bootstrap `@` root while preserving its Btrfs subvolumes.
+- **dpkg-pre-post-snapper** – Creates descriptive Snapper pre/post snapshots around package transactions.
+- **add_subvolumes** – Converts selected root and home directories into independent Btrfs subvolumes.
+- **add_updategrub-service** – Installs a systemd service that runs `update-grub` during shutdown and reboot.
+
+---
+
+## Acknowledgements
+
+BootPrep began as a personal effort to expand the native Btrfs and Snapper experience provided by Debian and Ubuntu while preserving the distributions' default filesystem layout.
+
+The original proof of concept was inspired by two outstanding community articles:
+
+- **Reliable Btrfs snapshots with Snapper on Debian and Ubuntu** by Hossein Moslehi
+- **Install Fedora with Snapshot and Rollback Support** by Madhu Desai
+
+The Debian article inspired the original proof of concept using a patched `10_linux` script and a custom `99_efi` plugin. The Fedora article demonstrated shell scripting techniques and installation methods that influenced the early implementation, even though Fedora's Btrfs implementation differs significantly from Debian and Ubuntu.
+
+As development continued, those early experiments evolved into BootPrep—a dedicated boot preparation layer—and a collection of companion utilities that extend the native Btrfs, Snapper, and GRUB experience without replacing the tools already provided by the distribution.
+
+I'd like to thank both authors for sharing their knowledge and helping inspire what has become BootPrep.
 
 ---
 
