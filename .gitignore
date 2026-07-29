@@ -1,1 +1,12 @@
+# Editor temporary files
+*.swp
+*.kate-swp
+*~
 
+# Logs
+*.log
+
+# Archives created during testing
+*.zip
+*.tar
+*.tar.gz
