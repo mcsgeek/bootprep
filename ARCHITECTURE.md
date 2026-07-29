@@ -369,13 +369,11 @@ All should invoke the same engine interface.
 
 ---
 
-## Version 1.0 Goal
+## Version 1.0
 
-BootPrep is currently in early development under the public project version `0.1.0-dev`.
+BootPrep Version 1.0 prepares a supported writable Btrfs snapshot to become the next bootable system.
 
-Version 1.0 is reached when BootPrep can reliably prepare a selected supported Btrfs snapshot to become the next bootable system, with validated failure handling and recovery behavior.
-
-Whether the snapshot was selected by Snapper, manual Btrfs commands, or another interface remains outside the engine's responsibility.
+The `prepare` operation remains responsible for preparing an already-selected writable snapshot and its boot environment. Snapshot selection, rollback, and creation of the writable rollback result remain the responsibility of Snapper or another invoking workflow.
 
 That separation of responsibilities defines the BootPrep architecture.
 
