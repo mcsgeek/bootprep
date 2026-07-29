@@ -84,7 +84,7 @@ The installer also generates:
 
 ## Installation
 
-> **Warning:** The installer is still under development. It diverts and patches `/etc/grub.d/10_linux`, updates `/etc/default/grub`, and regenerates the GRUB configuration. Test it first in an environment with a verified recovery path before deploying it on a daily-use system.
+> **Warning:** The installer diverts and patches `/etc/grub.d/10_linux`, updates `/etc/default/grub`, and regenerates the GRUB configuration. Install BootPrep only on a system with a verified recovery path.
 
 > **Important:** Installing BootPrep does not immediately change how the system boots. However, after the first rollback has been prepared and the system begins operating from a writable snapshot, BootPrep’s GRUB integration becomes part of the boot architecture. BootPrep should not be removed from such a system. Returning to the original root-subvolume model would require a deliberate filesystem and bootloader migration, not a normal uninstall.
 
@@ -136,13 +136,15 @@ BootPrep is guided by a few simple principles:
 
 ---
 
-## Current Development
+## Version 1.0
 
-Current development is focused on validating the complete boot preparation transaction, including the BootPrep engine, the `99_bootprep` Snapper plugin, installer integration, EFI handling, transaction state management, cleanup, and failure recovery.
+BootPrep Version 1.0 has been extensively tested across multiple Debian, Ubuntu, and derivative systems using different supported configurations.
+
+Final development cleanup is complete. The project is currently completing release documentation.
 
 Future development will expand BootPrep beyond rollback preparation while maintaining the same philosophy of integrating with existing system components rather than replacing them.
 
-Packaging, broader distribution support, and additional automation will follow after the core transaction has been proven reliable.
+Packaging, broader distribution support, and additional automation may follow after the initial release.
 
 ---
 
