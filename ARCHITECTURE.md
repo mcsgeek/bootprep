@@ -241,6 +241,40 @@ This allows BootPrep to prepare snapshots selected without Snapper.
 
 ---
 
+## Future Activation Workflow
+
+The current `prepare` command operates only after another tool, such as Snapper, has created the writable rollback snapshot and set the Btrfs default subvolume.
+
+In the current Snapper-integrated workflow, the rollback has already occurred before BootPrep is invoked:
+
+```text
+User invokes Snapper rollback
+        |
+        v
+Snapper performs the rollback
+        |
+        v
+Snapper creates the resulting writable snapshot
+        |
+        v
+Snapper sets it as the Btrfs default subvolume
+        |
+        v
+99_bootprep receives the resulting snapshot number
+        |
+        v
+bootprep prepare <resulting-snapshot-number>
+        |
+        v
+BootPrep prepares the system for the next boot
+```
+
+A future `activate <snapshot-number>` command may accept a user-selected read-only snapshot, use Btrfs operations to create a writable snapshot and set it as the default subvolume, and then invoke the existing preparation transaction.
+
+These additional responsibilities will belong to the higher-level `activate` workflow. They will not change the responsibility of the underlying `prepare` operation, which remains focused exclusively on preparing an already-selected writable snapshot and its boot environment for the next reboot.
+
+---
+
 ## Runtime State
 
 BootPrep uses:
