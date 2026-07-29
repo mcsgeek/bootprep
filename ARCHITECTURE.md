@@ -155,6 +155,8 @@ During a prepare transaction, the engine also backs up and patches the vendor EF
 
 This integration is intended to preserve normal boot behavior when no pending BootPrep state exists.
 
+Before the first rollback, the system continues to boot from its original root subvolume. After Snapper performs a rollback and BootPrep prepares the resulting writable snapshot, the system boots from a nested snapshot subvolume. From that point forward, BootPrep’s GRUB integration is required to resolve the nested root subvolume correctly. Removing BootPrep is therefore unsupported; returning to the original root-subvolume layout would require a deliberate filesystem and bootloader migration.
+
 ---
 
 ## Engine Independence
