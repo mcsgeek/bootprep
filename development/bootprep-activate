@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SNAP_NUMBER="${1:-}"
+MOUNT="${2:-/}"
+
+if [[ -z "$SNAP_NUMBER" || ! "$SNAP_NUMBER" =~ ^[0-9]+$ ]]; then
+    echo "Usage: bootprep-activate <snapshot-number> [mount-point]" >&2
+    exit 1
+fi
+
+# Ensure the mount point ends with a single trailing slash for reliable pathing
+BASE_MOUNT="${MOUNT%/}/"
+TARGET="${BASE_MOUNT}.snapshots/${SNAP_NUMBER}/snapshot"
+
+# Validate that the snapshot subvolume actually exists on the filesystem
+if [ ! -d "$TARGET" ]; then
+    echo "ERROR: Snapshot directory '${TARGET}' does not exist." >&2
+    exit 1
+fi
+
+echo
+echo "========================================="
+echo "           BootPrep Activate             "
+echo "========================================="
+echo
+echo "Snapshot    : #${SNAP_NUMBER}"
+echo "Path        : ${TARGET}"
+echo "Mount Point : ${MOUNT}"
+echo
+
+echo "[1/3] Making snapshot writable..."
+/usr/bin/btrfs property set "${TARGET}" ro false
+
+echo "[2/3] Setting default Btrfs subvolume..."
+# Resolve the internal numeric Subvolume ID to prevent the CLI path error
+SUBVOL_ID=$(/usr/bin/btrfs inspect-internal rootid "${TARGET}")
+/usr/bin/btrfs subvolume set-default "${SUBVOL_ID}" "${MOUNT}"
+
+echo "[3/3] Preparing snapshot for boot..."
+/usr/sbin/bootprep prepare "${SNAP_NUMBER}"
+
+echo
+echo "SUCCESS"
+echo "Snapshot #${SNAP_NUMBER} is activated and ready for reboot."
