@@ -84,7 +84,7 @@ The installer also generates:
 
 ## Installation
 
-> **Warning:** The installer diverts and patches `/etc/grub.d/10_linux`, updates `/etc/default/grub`, and regenerates the GRUB configuration. Install BootPrep only on a system with a verified recovery path.
+> **Warning:** The installer diverts and patches `/etc/grub.d/10_linux`, updates `/etc/default/grub`, and regenerates the GRUB configuration. Test BootPrep first in an environment with a verified recovery path before deploying it on a daily-use system.
 
 > **Important:** Installing BootPrep does not immediately change how the system boots. However, after the first rollback has been prepared and the system begins operating from a writable snapshot, BootPrep’s GRUB integration becomes part of the boot architecture. BootPrep should not be removed from such a system. Returning to the original root-subvolume model would require a deliberate filesystem and bootloader migration, not a normal uninstall.
 
