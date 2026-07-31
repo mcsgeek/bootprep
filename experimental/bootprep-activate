@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 Scott McClain
 set -euo pipefail
 
-SNAP_NUMBER="${1:-}"
+SNAPSHOT_NUM="${1:-}"
 MOUNT="${2:-/}"
 
-if [[ -z "$SNAP_NUMBER" || ! "$SNAP_NUMBER" =~ ^[0-9]+$ ]]; then
+if [[ -z "$SNAPSHOT_NUM" || ! "$SNAPSHOT_NUM" =~ ^[0-9]+$ ]]; then
     echo "Usage: bootprep-activate <snapshot-number> [mount-point]" >&2
     exit 1
 fi
 
 # Ensure the mount point ends with a single trailing slash for reliable pathing
 BASE_MOUNT="${MOUNT%/}/"
-TARGET="${BASE_MOUNT}.snapshots/${SNAP_NUMBER}/snapshot"
+TARGET="${BASE_MOUNT}.snapshots/${SNAPSHOT_NUM}/snapshot"
 
 # Validate that the snapshot subvolume actually exists on the filesystem
 if [ ! -d "$TARGET" ]; then
@@ -26,7 +24,7 @@ echo "========================================="
 echo "           BootPrep Activate             "
 echo "========================================="
 echo
-echo "Snapshot    : #${SNAP_NUMBER}"
+echo "Snapshot    : #${SNAPSHOT_NUM}"
 echo "Path        : ${TARGET}"
 echo "Mount Point : ${MOUNT}"
 echo
@@ -40,8 +38,8 @@ SUBVOL_ID=$(/usr/bin/btrfs inspect-internal rootid "${TARGET}")
 /usr/bin/btrfs subvolume set-default "${SUBVOL_ID}" "${MOUNT}"
 
 echo "[3/3] Preparing snapshot for boot..."
-/usr/sbin/bootprep prepare "${SNAP_NUMBER}"
+/usr/sbin/bootprep prepare "${SNAPSHOT_NUM}"
 
 echo
 echo "SUCCESS"
-echo "Snapshot #${SNAP_NUMBER} is activated and ready for reboot."
+echo "Snapshot #${SNAPSHOT_NUM} is activated and ready for reboot."
