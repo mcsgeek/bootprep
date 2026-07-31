@@ -305,7 +305,7 @@ Transaction-time EFI backups are retained beneath:
 
 ## Project Structure
 
-The current repository intentionally keeps the three executable components together because the installer expects them in the same directory:
+The repository keeps the BootPrep engine, Snapper plugin, installer, and component upgrade script together. The installer performs initial system and GRUB integration, while the upgrade script refreshes only the engine and Snapper plugin on an existing installation.
 
 ```text
 bootprep/
@@ -315,10 +315,11 @@ bootprep/
 ├── LICENSE
 ├── README.md
 ├── bootprep
-└── bootprep-install.sh
+├── bootprep-install.sh
+└── bootprep-upgrade.sh
 ```
 
-The installer is run from this directory and installs the engine and Snapper plugin into their system locations.
+The installer performs the initial installation of the engine, Snapper plugin, runtime library, and GRUB integration. The upgrade script requires an existing BootPrep installation and reinstalls only the engine and Snapper plugin.
 
 ---
 
@@ -350,7 +351,7 @@ Nothing more.
 
 ### 4. Separation of Responsibilities
 
-The engine, installer, generated runtime library, and Snapper plugin have distinct responsibilities.
+The engine, Snapper plugin, installer, component upgrade script, and generated runtime library have distinct responsibilities.
 
 No component should take ownership of another component's job.
 
