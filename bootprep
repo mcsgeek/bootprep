@@ -4,7 +4,6 @@
 #
 # BootPrep
 # Version 1.0
-# Build 0005 Phase 2
 #
 # Purpose
 # -------
@@ -20,7 +19,6 @@ set -euo pipefail
 
 PROGRAM="bootprep"
 VERSION="1.0"
-BUILD="0005 Phase 2"
 
 DEBUG="${DEBUG:-false}"
 
@@ -427,7 +425,6 @@ cat <<EOF
 =========================================
  BootPrep
  Version ${VERSION}
- Build ${BUILD}
 =========================================
 EOF
 
