@@ -25,7 +25,7 @@ BUILD="0005 Phase 2"
 DEBUG="${DEBUG:-false}"
 
 COMMAND="${1:-}"
-SNAPSHOT_ID="${2:-}"
+SNAPSHOT_NUM="${2:-}"
 
 ROOT_DEVICE=""
 SNAPSHOT_SUBVOL=""
@@ -84,7 +84,7 @@ validate() {
             ;;
     esac
 
-    [[ "$SNAPSHOT_ID" =~ ^[0-9]+$ ]] \
+    [[ "$SNAPSHOT_NUM" =~ ^[0-9]+$ ]] \
         || die "Usage: $0 prepare <snapshot-number>"
 
     return 0
@@ -106,7 +106,7 @@ discover_snapshot() {
 
     SNAPSHOT_SUBVOL="$(
         btrfs subvolume list / |
-        awk -v id="$SNAPSHOT_ID" '
+        awk -v id="$SNAPSHOT_NUM" '
             {
                 sub(/^.* path /,"")
 
@@ -358,7 +358,7 @@ write_state() {
 
     cat > "${BOOTPREP_STATE_FILE}" <<EOF
 BOOTPREP_SUBVOLUME=${SNAPSHOT_SUBVOL}
-BOOTPREP_SNAPSHOT_ID=${SNAPSHOT_ID}
+BOOTPREP_SNAPSHOT_NUM=${SNAPSHOT_NUM}
 BOOTPREP_STATUS=PENDING
 EOF
 
