@@ -69,13 +69,14 @@ Nothing redirects the next boot until **you** initiate a rollback or intentional
 
 ## Current Components
 
-The repository currently contains three executable components:
+The repository currently contains four executable components:
 
 | Component | Responsibility | Installed location |
 | --- | --- | --- |
 | `bootprep` | Boot preparation engine | `/usr/sbin/bootprep` |
 | `99_bootprep` | Snapper rollback plugin | `/usr/lib/snapper/plugins/99_bootprep` |
 | `bootprep-install.sh` | Installer and GRUB integration | Run from the repository; not installed as a command |
+| `bootprep-upgrade.sh` | Reinstalls and verifies the BootPrep engine and Snapper plugin on an existing installation | Run from the repository; not installed as a command |
 
 The installer also generates:
 
@@ -96,6 +97,22 @@ sudo ./bootprep-install.sh
 ```
 
 The installer validates the expected Debian-style GRUB layout before applying its integration.
+
+## Upgrading
+
+Keep `bootprep`, `99_bootprep`, and `bootprep-upgrade.sh` together in the repository root, then run:
+
+```bash
+chmod +x bootprep 99_bootprep bootprep-upgrade.sh
+sudo ./bootprep-upgrade.sh
+```
+
+The upgrade script requires an existing BootPrep installation. It reinstalls and verifies only:
+
+- `/usr/sbin/bootprep`
+- `/usr/lib/snapper/plugins/99_bootprep`
+
+It does not modify the GRUB integration, generated runtime, configuration, state, or backups. New installations must use `bootprep-install.sh`.
 
 ---
 
