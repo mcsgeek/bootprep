@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# bootprep
+#
+# Boot preparation engine for Debian, Ubuntu, and their derivatives using
+# Snapper with the default nested Btrfs subvolume layout.
+#
+# Version: 1.0.0
+# License: GPL-3.0-or-later
+#
 # Copyright (C) 2026 Scott McClain
-#
-# BootPrep
-# Version 1.0.0
-#
-# Purpose
-# -------
-# Boot preparation engine for Debian and Ubuntu-based systems using
-# Snapper with the default nested Btrfs snapshot layout.
-#
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 set -euo pipefail
 
@@ -18,7 +18,7 @@ set -euo pipefail
 ###############################################################################
 
 PROGRAM="bootprep"
-VERSION="1.0"
+VERSION="1.0.0"
 
 DEBUG="${DEBUG:-false}"
 
