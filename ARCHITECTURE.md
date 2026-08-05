@@ -50,13 +50,13 @@ BootPrep has exactly one responsibility:
 
 > **Prepare the boot environment so a selected writable snapshot becomes the next bootable system.**
 
-It performs only the operations necessary to accomplish that goal.
+Every operation performed by BootPrep exists solely to accomplish that goal.
 
 ---
 
 ## What BootPrep Does
 
-The BootPrep engine:
+To fulfill its single responsibility, the BootPrep engine:
 
 - Accepts a snapshot number through the `prepare` command.
 - Discovers the corresponding nested Btrfs snapshot subvolume.
@@ -71,23 +71,17 @@ The BootPrep engine:
 - Cleans up temporary mounts and files.
 - Exits.
 
+> **Prepare the boot environment so a selected writable snapshot becomes the next bootable system.**
+
 ---
 
 ## What BootPrep Does Not Do
 
-BootPrep intentionally does not:
+BootPrep intentionally avoids responsibilities that already belong to other system components.
 
-- Create snapshots.
-- Delete snapshots.
-- Perform snapshot cleanup.
-- Manage snapshot retention.
-- Choose which snapshot should be used.
-- Set the Btrfs default subvolume.
-- Replace GRUB.
-- Replace Snapper.
-- Replace Btrfs.
+Snapshot creation, writable snapshot management, rollback operations, filesystem management, and bootloader management remain the responsibility of Btrfs, Snapper, GRUB, or the workflow that presents the selected writable snapshot.
 
-Those responsibilities belong to their respective projects or to the workflow that invokes BootPrep.
+> **BootPrep exists to fill a missing responsibility—not to replace existing ones.**p.
 
 ---
 
