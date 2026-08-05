@@ -2,9 +2,11 @@
 
 > **Business as usual... until you need it.**
 
-BootPrep is a lightweight boot preparation layer for **Debian, Ubuntu, and their derivatives** that use Snapper with the **default nested Btrfs subvolume layout**.
+BootPrep is the activation layer for systems using a default nested Btrfs subvolume layout.
 
-Rather than replacing Snapper, changing GRUB's normal boot behavior, or introducing another rollback framework, BootPrep integrates with the existing boot process and remains dormant until a writable rollback snapshot is intentionally prepared for the next boot.
+It prepares the boot environment so a selected writable Snapper snapshot can become the next bootable system while preserving the existing filesystem layout.
+
+Rather than replacing Snapper, changing GRUB's normal boot behavior, or introducing another rollback framework, BootPrep integrates with the existing Btrfs, Snapper, and GRUB infrastructure. It remains dormant until a writable snapshot is intentionally prepared for the next boot.
 
 ## Background
 
