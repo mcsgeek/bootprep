@@ -2,9 +2,11 @@
 
 ## Purpose
 
-BootPrep is a command-line utility that prepares a selected writable Btrfs snapshot to become the next bootable system.
+BootPrep is the activation layer for systems using a default nested Btrfs subvolume layout.
 
-BootPrep does **not** create snapshots, choose snapshots, perform the Btrfs rollback, or replace the boot loader. Instead, it coordinates existing Linux components after a snapshot has been selected so the next reboot enters the intended system state.
+It prepares the boot environment after a selected writable snapshot has been presented by the invoking workflow, allowing that snapshot to become the next bootable system while preserving the existing filesystem layout.
+
+BootPrep does **not** create snapshots, choose snapshots, make snapshots writable, set the Btrfs default subvolume, perform rollbacks, or replace the boot loader. Those responsibilities remain with Btrfs, Snapper, or the workflow that invokes BootPrep.
 
 The BootPrep engine can be called directly or through the included Snapper rollback plugin.
 
@@ -12,31 +14,33 @@ The BootPrep engine can be called directly or through the included Snapper rollb
 
 ## Design Philosophy
 
-BootPrep exists because no individual Linux component performs the complete transition between a selected writable snapshot and a successfully bootable Debian-style system.
+BootPrep exists because no individual Linux component performs the complete transition between a selected writable snapshot and a successfully bootable system.
 
 Each component already performs its own job well.
 
 | Component | Responsibility |
 | --- | --- |
-| Btrfs | Stores and mounts subvolumes and tracks the default subvolume |
+| Btrfs | Creates writable snapshots, manages subvolumes, and presents the selected root filesystem |
 | Snapper | Creates, manages, and rolls back snapshots |
 | GRUB | Generates boot configuration |
-| Linux kernel | Mounts and boots the root filesystem selected through GRUB |
-| BootPrep | Prepares the selected snapshot and boot metadata for the next boot |
+| Linux kernel | Mounts and boots the selected root filesystem |
+| BootPrep | Prepares the boot environment for the next boot |
 
-BootPrep is therefore an **integration layer**, not a replacement for any existing project.
+BootPrep is therefore the **activation layer** between the invoking workflow and the next bootable system, not a replacement for any existing project.
 
 ---
 
 ## Mission Statement
 
-> **Snapper performs the rollback. BootPrep prepares the selected writable snapshot and boot environment for the next reboot.**
+> **Snapper and Btrfs present the selected writable snapshot. BootPrep prepares the boot environment for the next boot.**
 
-This statement defines the boundary between Snapper and BootPrep.
+This statement defines the boundary between Snapper, Btrfs, and BootPrep.
 
-Snapper chooses and creates the rollback result.
+Snapper manages the rollback workflow.
 
-BootPrep prepares it.
+Btrfs creates and presents the writable snapshot.
+
+BootPrep prepares the boot environment.
 
 ---
 
@@ -44,7 +48,7 @@ BootPrep prepares it.
 
 BootPrep has exactly one responsibility:
 
-> **Prepare a selected writable Btrfs snapshot so it becomes the next bootable system.**
+> **Prepare the boot environment so a selected writable snapshot becomes the next bootable system.**
 
 It performs only the operations necessary to accomplish that goal.
 
