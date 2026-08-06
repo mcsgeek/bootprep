@@ -7,7 +7,7 @@
 # BootPrep Installer
 #
 # Component : Installer
-# Version   : 1.0
+# Version   : 1.0.0
 #
 # Installs BootPrep and integrates Debian-style GRUB with Btrfs snapshot boot support.
 #
