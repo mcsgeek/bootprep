@@ -100,6 +100,8 @@ sudo ./bootprep-install.sh
 
 The installer validates the expected Debian-style GRUB layout before applying its integration.
 
+The installer also performs Snapshot Store Reconciliation when matching snapshot stores are discovered, ensuring the required snapshot store mounts are available before BootPrep is first used.
+
 ## Upgrading
 
 Keep `bootprep`, `99_bootprep`, and `bootprep-upgrade.sh` together in the repository root, then run:
@@ -138,6 +140,20 @@ sudo bootprep prepare <snapshot-number>
 
 BootPrep prepares the selected snapshot for the next boot. It does **not** create the snapshot, perform the rollback, or manage Btrfs subvolumes. Those responsibilities remain with the tools designed for those tasks.
 
+## Snapshot Store Reconciliation
+
+Before preparing a writable snapshot for boot, BootPrep automatically discovers any available root and home snapshot stores and reconciles the corresponding `fstab` entries in the target snapshot.
+
+The reconciliation policy is intentionally conservative:
+
+- Correct entries are preserved.
+- Missing entries are created.
+- Incorrect entries are replaced with canonical entries.
+- Duplicate active entries result in a safe abort.
+- If no matching snapshot store exists, no changes are made.
+
+BootPrep derives mount options from the running system, filters runtime-only mount options, and preserves the existing Btrfs mount policy.
+
 ---
 
 ## Project Goals
@@ -155,15 +171,11 @@ BootPrep is guided by a few simple principles:
 
 ---
 
-## Version 1.0
+## Version 1.0.1
 
-BootPrep Version 1.0 has been extensively tested across multiple Debian, Ubuntu, and derivative systems using different supported configurations.
+BootPrep Version 1.0.1 introduces automatic Snapshot Store Reconciliation, improving compatibility with existing systems while preserving the existing Btrfs mount policy.
 
-Final development cleanup is complete. The project is currently completing release documentation.
-
-Future development will expand BootPrep beyond rollback preparation while maintaining the same philosophy of integrating with existing system components rather than replacing them.
-
-Packaging, broader distribution support, and additional automation may follow after the initial release.
+Development now shifts toward Version 1.1.0 and the planned `bootprep-btrfs` companion utility, which will extend the native `btrfs` command with optional BootPrep-aware workflows while continuing to use the existing BootPrep preparation engine.
 
 ---
 

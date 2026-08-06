@@ -60,6 +60,7 @@ To fulfill its single responsibility, the BootPrep engine:
 
 - Accepts a snapshot number through the `prepare` command.
 - Discovers the corresponding nested Btrfs snapshot subvolume.
+- Reconciles required snapshot store mounts.
 - Mounts the selected snapshot.
 - Bind-mounts the runtime filesystems required by the chroot.
 - Enters the snapshot through a chroot.
@@ -72,6 +73,24 @@ To fulfill its single responsibility, the BootPrep engine:
 - Exits.
 
 > **Prepare the boot environment so a selected writable snapshot becomes the next bootable system.**
+
+---
+
+## Snapshot Store Reconciliation
+
+Snapshot booting requires the appropriate snapshot store mounts to exist within the writable snapshot being prepared.
+
+BootPrep discovers available snapshot stores directly from the Btrfs filesystem and reconciles only the required snapshot store entries in the target system.
+
+The reconciliation policy is intentionally conservative:
+
+- Correct entry → Leave unchanged.
+- Missing entry → Add canonical entry.
+- Incorrect entry → Replace the complete entry.
+- Duplicate active entries → Abort safely.
+- No matching snapshot store → No action.
+
+BootPrep derives mount options from the running system, filters runtime-only mount options, and preserves the existing Btrfs mount policy when generating canonical `fstab` entries.
 
 ---
 
@@ -94,6 +113,9 @@ Selected writable snapshot
         |
         v
 Discover nested snapshot subvolume
+        |
+        v
+Reconcile snapshot store mounts
         |
         v
 Mount snapshot and bind runtime filesystems
@@ -269,7 +291,9 @@ bootprep prepare <resulting-snapshot-number>
 BootPrep prepares the system for the next boot
 ```
 
-A future `activate <snapshot-number>` command may accept a user-selected read-only snapshot, use Btrfs operations to create a writable snapshot and set it as the default subvolume, and then invoke the existing preparation transaction.
+A future BootPrep companion utility (`bootprep-btrfs`) may provide an `activate` workflow that creates a writable snapshot, sets it as the default Btrfs subvolume, and then invokes the existing BootPrep preparation engine.
+
+The BootPrep engine itself will remain responsible only for preparing an already-selected writable snapshot for the next boot.
 
 These additional responsibilities will belong to the higher-level `activate` workflow. They will not change the responsibility of the underlying `prepare` operation, which remains focused exclusively on preparing an already-selected writable snapshot and its boot environment for the next reboot.
 
@@ -368,11 +392,13 @@ All should invoke the same engine interface.
 
 ---
 
-## Version 1.0
+## Version 1.0.1
 
-BootPrep Version 1.0 prepares a supported writable Btrfs snapshot to become the next bootable system.
+BootPrep Version 1.0.1 prepares a supported writable Btrfs snapshot to become the next bootable system while automatically performing Snapshot Store Reconciliation for any discovered snapshot stores.
 
-The `prepare` operation remains responsible for preparing an already-selected writable snapshot and its boot environment. Snapshot selection, rollback, and creation of the writable rollback result remain the responsibility of Snapper or another invoking workflow.
+The `prepare` operation remains responsible only for preparing an already-selected writable snapshot and its boot environment. Snapshot selection, rollback, writable snapshot creation, and Btrfs subvolume management remain the responsibility of the invoking workflow.
+
+Future BootPrep companion utilities, including the planned `bootprep-btrfs`, will build upon this preparation engine rather than duplicating its functionality.
 
 That separation of responsibilities defines the BootPrep architecture.
 
