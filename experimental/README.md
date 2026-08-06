@@ -9,4 +9,4 @@ may change without notice, and should be considered experimental.
 Current prototypes:
 
 - `bootprep-activate` — Proof of concept for the planned
-  `bootprep activate <snapshot-number>` command.
+  `bootprep-btrfs activate <snapshot-number>` command.
