@@ -2,7 +2,7 @@
 
 > **Business as usual... until you need it.**
 
-BootPrep is the activation layer for systems using a default nested Btrfs subvolume layout.
+BootPrep is the activation layer for systems using a default nested Btrfs subvolume layout, such as Debian, Ubuntu, and many of their derivatives.
 
 It prepares the boot environment so a selected writable Snapper snapshot can become the next bootable system while preserving the existing filesystem layout.
 
