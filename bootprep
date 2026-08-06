@@ -5,7 +5,7 @@
 # Boot preparation engine for Debian, Ubuntu, and their derivatives using
 # Snapper with the default nested Btrfs subvolume layout.
 #
-# Version: 1.0.0
+# Version: 1.0.1
 # License: GPL-3.0-or-later
 #
 # Copyright (C) 2026 Scott McClain
@@ -26,15 +26,19 @@ COMMAND="${1:-}"
 SNAPSHOT_NUM="${2:-}"
 
 ROOT_DEVICE=""
+ROOT_UUID=""
 SNAPSHOT_SUBVOL=""
 WORKDIR=""
 MOUNTPOINT=""
 ROOT_SUBVOL=""
+BASE_SUBVOL=""
+HOME_SUBVOL=""
 EFI_VENDOR=""
 EFI_GRUB_CFG=""
 
 BOOTPREP_STATE_DIR="/var/lib/bootprep"
 BOOTPREP_STATE_FILE="${BOOTPREP_STATE_DIR}/next-boot"
+BOOTPREP_BACKUP_DIR="${BOOTPREP_STATE_DIR}/backups"
 EFI_BACKUP_DIR="${BOOTPREP_STATE_DIR}/efi-backups"
 EFI_BACKUP_KEEP=10
 
@@ -97,6 +101,11 @@ discover_snapshot() {
     ROOT_DEVICE="$(findmnt -n -o SOURCE /)"
     ROOT_DEVICE="${ROOT_DEVICE%%[*}"
 
+    ROOT_UUID="$(findmnt -n -o UUID /)"
+
+    [[ -n "$ROOT_UUID" ]] \
+        || transaction_fail "Unable to determine the root Btrfs filesystem UUID."
+
     ROOT_SUBVOL="$(
         findmnt -n -o OPTIONS / |
         sed -n 's/.*subvol=\/\([^,]*\).*/\1/p'
@@ -136,7 +145,9 @@ discover_snapshot() {
     SNAPSHOT_SUBVOL="${BASE_SUBVOL}/${SNAPSHOT_SUBVOL}"
 
     dbg "Root device     : $ROOT_DEVICE"
+    dbg "Root UUID       : $ROOT_UUID"
     dbg "Root subvolume  : $ROOT_SUBVOL"
+    dbg "Base subvolume  : $BASE_SUBVOL"
     dbg "Snapshot subvol : $SNAPSHOT_SUBVOL"
 
     transaction_ok "Snapshot located"
@@ -165,6 +176,10 @@ mount_snapshot() {
         || transaction_fail "Mounted snapshot could not be verified."
 
     transaction_ok "Snapshot mounted"
+    return 0
+}
+
+bind_runtime_filesystems() {
 
     for d in dev proc sys run; do
         mount --bind "/$d" "$MOUNTPOINT/$d"
@@ -172,6 +187,326 @@ mount_snapshot() {
     done
 
     transaction_ok "Bind mounts"
+    return 0
+}
+
+###############################################################################
+# Snapshot Store Mount Reconciliation
+###############################################################################
+
+discover_home_subvolume() {
+
+    local home_target
+    local home_options
+
+    home_target="$(findmnt -n -o TARGET -T /home 2>/dev/null || true)"
+    HOME_SUBVOL=""
+
+    if [[ "$home_target" == "/home" ]]; then
+        home_options="$(findmnt -n -o OPTIONS /home 2>/dev/null || true)"
+
+        HOME_SUBVOL="$(
+            sed -n 's/.*subvol=\/\([^,]*\).*/\1/p' <<< "$home_options"
+        )"
+    fi
+
+    dbg "Home subvolume  : ${HOME_SUBVOL:-not separate}"
+    return 0
+}
+
+discover_snapshot_stores() {
+
+    local path
+    local root_store="${BASE_SUBVOL}/.snapshots"
+    local home_store
+
+    discover_home_subvolume
+
+    if [[ -n "$HOME_SUBVOL" ]]; then
+        home_store="${HOME_SUBVOL}/.snapshots"
+    else
+        home_store="${BASE_SUBVOL}/home/.snapshots"
+    fi
+
+    while IFS= read -r path; do
+        case "${path}" in
+            ".snapshots"|"${root_store}")
+                printf '%s\t%s\n' "${root_store}" "/.snapshots"
+                ;;
+            "${home_store}")
+                printf '%s\t%s\n' "${path}" "/home/.snapshots"
+                ;;
+        esac
+    done < <(
+        btrfs subvolume list / |
+        awk '
+            {
+                sub(/^.* path /, "")
+                if ($0 ~ /(^|\/)\.snapshots$/)
+                    print
+            }
+        '
+    )
+
+    return 0
+}
+
+snapshot_mount_options() {
+
+    local options
+
+    options="$(
+        findmnt -n -o OPTIONS / |
+        tr ',' '\n' |
+        awk '
+            $0 == "rw" || $0 == "ro" { next }
+            $0 ~ /^subvol=/ { next }
+            $0 ~ /^subvolid=/ { next }
+            $0 ~ /^space_cache=/ { next }
+            NF { print }
+        ' |
+        paste -sd, -
+    )"
+
+    if [[ -n "$options" ]]; then
+        options="defaults,$options"
+    else
+        options="defaults"
+    fi
+
+    printf '%s\n' "$options"
+}
+
+fstab_entry_is_correct() {
+
+    local line="$1"
+    local expected_subvol="$2"
+    local source
+    local target
+    local fstype
+    local options
+
+    read -r source target fstype options _ <<< "$line"
+
+    [[ "$fstype" == "btrfs" ]] || return 1
+    [[ ",$options," == *",subvol=/$expected_subvol,"* ]] || return 1
+
+    case "$source" in
+        "UUID=${ROOT_UUID}"|"${ROOT_DEVICE}")
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
+canonical_fstab_entry() {
+
+    local subvol="$1"
+    local mountpoint="$2"
+    local options="$3"
+
+    printf 'UUID=%s %s btrfs subvol=/%s,%s 0 0\n' \
+        "$ROOT_UUID" \
+        "$mountpoint" \
+        "$subvol" \
+        "$options"
+}
+
+reconcile_fstab_entry() {
+
+    local fstab="$1"
+    local subvol="$2"
+    local mountpoint="$3"
+    local options="$4"
+    local canonical="$5"
+    local tmpfile="$6"
+
+    local line
+    local -a matches=()
+
+    mapfile -t matches < <(
+        awk -v target="$mountpoint" '
+            /^[[:space:]]*#/ || NF == 0 { next }
+            $2 == target { print }
+        ' "$fstab"
+    )
+
+    case "${#matches[@]}" in
+        0)
+            printf '%s\n' "$canonical" >> "$tmpfile"
+            log "Adding snapshot store mount: $mountpoint"
+            ;;
+        1)
+            line="${matches[0]}"
+
+            if fstab_entry_is_correct "$line" "$subvol"; then
+                return 0
+            fi
+
+            awk -v target="$mountpoint" -v replacement="$canonical" '
+                BEGIN {
+                    replaced = 0
+                }
+
+                /^[[:space:]]*#/ || NF == 0 {
+                    print
+                    next
+                }
+
+                $2 == target {
+                    if (replaced == 0) {
+                        print replacement
+                        replaced = 1
+                    }
+                    next
+                }
+
+                {
+                    print
+                }
+
+                END {
+                    if (replaced != 1)
+                        exit 1
+                }
+            ' "$tmpfile" > "${tmpfile}.new" \
+                || transaction_fail "Unable to replace the fstab entry for $mountpoint."
+
+            mv "${tmpfile}.new" "$tmpfile"
+            log "Replacing snapshot store mount: $mountpoint"
+            ;;
+        *)
+            transaction_fail "Multiple active fstab entries found for $mountpoint."
+            ;;
+    esac
+
+    return 0
+}
+
+verify_reconciled_fstab() {
+
+    local fstab="$1"
+    shift
+
+    local subvol
+    local mountpoint
+    local line
+    local -a matches=()
+
+    while (( $# >= 2 )); do
+        subvol="$1"
+        mountpoint="$2"
+        shift 2
+
+        mapfile -t matches < <(
+            awk -v target="$mountpoint" '
+                /^[[:space:]]*#/ || NF == 0 { next }
+                $2 == target { print }
+            ' "$fstab"
+        )
+
+        [[ "${#matches[@]}" -eq 1 ]] \
+            || transaction_fail "Snapshot store mount validation failed for $mountpoint."
+
+        line="${matches[0]}"
+
+        fstab_entry_is_correct "$line" "$subvol" \
+            || transaction_fail "Snapshot store mount validation failed for $mountpoint."
+    done
+
+    return 0
+}
+
+reconcile_snapshot_store_mounts() {
+
+    local target_root="$1"
+    local fstab="${target_root}/etc/fstab"
+    local options
+    local tmpfile
+    local backup_file
+    local changed=false
+    local subvol
+    local mountpoint
+    local canonical
+    local -a stores=()
+    local -a verify_args=()
+
+    [[ -f "$fstab" ]] \
+        || transaction_fail "Snapshot fstab not found."
+
+    mapfile -t stores < <(discover_snapshot_stores)
+
+    if [[ "${#stores[@]}" -eq 0 ]]; then
+        transaction_ok "No snapshot store mounts required"
+        return 0
+    fi
+
+    options="$(snapshot_mount_options)"
+    tmpfile="$(mktemp "${WORKDIR}/fstab.XXXXXX")"
+    cp -a "$fstab" "$tmpfile"
+
+    for store in "${stores[@]}"; do
+        IFS=$'\t' read -r subvol mountpoint <<< "$store"
+
+        canonical="$(canonical_fstab_entry "$subvol" "$mountpoint" "$options")"
+        verify_args+=("$subvol" "$mountpoint")
+
+        if ! awk -v target="$mountpoint" '
+            /^[[:space:]]*#/ || NF == 0 { next }
+            $2 == target { found = 1 }
+            END { exit(found ? 0 : 1) }
+        ' "$fstab"; then
+            changed=true
+        else
+            local existing_line
+            existing_line="$(
+                awk -v target="$mountpoint" '
+                    /^[[:space:]]*#/ || NF == 0 { next }
+                    $2 == target { print; exit }
+                ' "$fstab"
+            )"
+
+            if ! fstab_entry_is_correct "$existing_line" "$subvol"; then
+                changed=true
+            fi
+        fi
+
+        reconcile_fstab_entry \
+            "$fstab" \
+            "$subvol" \
+            "$mountpoint" \
+            "$options" \
+            "$canonical" \
+            "$tmpfile"
+    done
+
+    verify_reconciled_fstab "$tmpfile" "${verify_args[@]}"
+
+    if [[ "$changed" == "false" ]]; then
+        rm -f "$tmpfile"
+        transaction_ok "Snapshot store mounts verified"
+        return 0
+    fi
+
+    mkdir -p "${target_root}${BOOTPREP_BACKUP_DIR}"
+    backup_file="${target_root}${BOOTPREP_BACKUP_DIR}/fstab.$(date +%Y%m%d-%H%M%S)"
+
+    cp -a "$fstab" "$backup_file"
+    cp -a "$tmpfile" "$fstab"
+
+    verify_reconciled_fstab "$fstab" "${verify_args[@]}" \
+        || {
+            cp -a "$backup_file" "$fstab"
+            transaction_fail "Snapshot fstab update failed and was restored."
+        }
+
+    rm -f "$tmpfile"
+
+    log "fstab backup    : ${backup_file#"$target_root"}"
+    transaction_ok "Snapshot store mounts reconciled"
     return 0
 }
 
@@ -186,9 +521,19 @@ prepare_grub() {
 
     log "Running update-grub with sanitized environment..."
 
-    chroot "$MOUNTPOINT" /usr/bin/env -i         HOME=/root         PATH=/usr/sbin:/usr/bin:/sbin:/bin         LANG="${LANG:-C}"         TERM="${TERM:-linux}"         TMPDIR=/tmp         TMP=/tmp         TEMP=/tmp         TEMPDIR=/tmp         /usr/sbin/update-grub
+    chroot "$MOUNTPOINT" /usr/bin/env -i \
+        HOME=/root \
+        PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+        LANG="${LANG:-C}" \
+        TERM="${TERM:-linux}" \
+        TMPDIR=/tmp \
+        TMP=/tmp \
+        TEMP=/tmp \
+        TEMPDIR=/tmp \
+        /usr/sbin/update-grub
 
-    [[ -f "$MOUNTPOINT/boot/grub/grub.cfg" ]]         || die "boot/grub/grub.cfg not found after update-grub."
+    [[ -f "$MOUNTPOINT/boot/grub/grub.cfg" ]] \
+        || die "boot/grub/grub.cfg not found after update-grub."
 
     [[ -f "${MOUNTPOINT}/boot/grub/grub.cfg" ]] \
         || transaction_fail "Snapshot grub.cfg was not generated."
@@ -245,9 +590,6 @@ discover_efi() {
     transaction_ok "EFI GRUB discovered"
     return 0
 }
-
-
-
 
 ###############################################################################
 # EFI Backup
@@ -394,7 +736,6 @@ cleanup_efi_backups() {
     return 0
 }
 
-
 ###############################################################################
 # Cleanup
 ###############################################################################
@@ -440,6 +781,8 @@ EOF
 
             discover_snapshot
             mount_snapshot
+            reconcile_snapshot_store_mounts "$MOUNTPOINT"
+            bind_runtime_filesystems
             prepare_grub
             discover_efi
             backup_efi

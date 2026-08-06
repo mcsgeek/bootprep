@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 Scott McClain
-#
-###############################################################################
 #
 # BootPrep Upgrade
-#
-# Component : Upgrade
-# Version   : 1.0
 #
 # Reinstalls and verifies the BootPrep executable and Snapper plugin for an
 # existing BootPrep installation.
 #
-###############################################################################
+# Version: 1.0.1
+# License: GPL-3.0-or-later
+#
+# Copyright (C) 2026 Scott McClain
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 set -Eeuo pipefail
 
