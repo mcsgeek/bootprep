@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Scott McClain
 #
-# snapper-bootprep
+# 99_bootprep
 #
 # Snapper rollback plugin for BootPrep
 #
