@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly BTRFS="/usr/bin/btrfs"
+readonly BOOTPREP="/usr/sbin/bootprep"
+
+die() {
+    printf '[ERROR] %s\n' "$1" >&2
+    exit 1
+}
+
+require_root() {
+    [[ ${EUID} -eq 0 ]] || die "Please run with sudo."
+}
+
+activate() {
+    local snapshot_num="${1:-}"
+    local mount_point="${2:-/}"
+    local base_mount
+    local target
+    local subvol_id
+
+    [[ $# -le 2 ]] \
+        || die "Usage: bootprep-btrfs activate <snapshot-number> [mount-point]"
+
+    [[ -n "${snapshot_num}" && "${snapshot_num}" =~ ^[0-9]+$ ]] \
+        || die "Usage: bootprep-btrfs activate <snapshot-number> [mount-point]"
+
+    [[ -d "${mount_point}" ]] \
+        || die "Mount point does not exist: ${mount_point}"
+
+    base_mount="${mount_point%/}/"
+    target="${base_mount}.snapshots/${snapshot_num}/snapshot"
+
+    [[ -d "${target}" ]] \
+        || die "Snapshot directory does not exist: ${target}"
+
+    "${BTRFS}" subvolume show "${target}" >/dev/null 2>&1 \
+        || die "Snapshot path is not a Btrfs subvolume: ${target}"
+
+    subvol_id="$("${BTRFS}" inspect-internal rootid "${target}")"
+
+    [[ "${subvol_id}" =~ ^[0-9]+$ ]] \
+        || die "Unable to resolve Btrfs subvolume ID for: ${target}"
+
+    printf '\n'
+    printf '=========================================\n'
+    printf ' BootPrep Btrfs\n'
+    printf '=========================================\n'
+    printf 'Snapshot    : #%s\n' "${snapshot_num}"
+    printf 'Path        : %s\n' "${target}"
+    printf 'Mount Point : %s\n' "${mount_point}"
+    printf '\n'
+
+    printf '[1/3] Making snapshot writable...\n'
+    "${BTRFS}" property set "${target}" ro false
+
+    printf '[2/3] Setting default Btrfs subvolume...\n'
+    "${BTRFS}" subvolume set-default "${subvol_id}" "${mount_point}"
+
+    printf '[3/3] Preparing snapshot for boot...\n'
+    "${BOOTPREP}" prepare "${snapshot_num}"
+
+    printf '\n'
+    printf '[ OK ] Snapshot #%s is activated and ready for reboot.\n' "${snapshot_num}"
+}
+
+require_root
+
+case "${1:-}" in
+    activate)
+        shift
+        activate "$@"
+        ;;
+    *)
+        exec "${BTRFS}" "$@"
+        ;;
+esac
