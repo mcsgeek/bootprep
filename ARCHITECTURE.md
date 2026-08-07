@@ -171,6 +171,8 @@ It:
 - Generates `/usr/lib/bootprep/bootprep-runtime.sh`.
 - Runs `update-grub`.
 
+`BOOTPREP_BTRFS_SNAPSHOT_BOOTING="true"` is the persistent enable switch for BootPrep's GRUB integration. The installer sets it once, allowing the generated GRUB configuration to remain BootPrep-aware without selecting a snapshot by itself. When no pending BootPrep state exists, normal root-subvolume resolution remains unchanged.
+
 During a prepare transaction, the engine also backs up and patches the vendor EFI `grub.cfg` prefix so the firmware-loaded GRUB configuration points into the selected snapshot.
 
 This integration is intended to preserve normal boot behavior when no pending BootPrep state exists.
