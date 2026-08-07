@@ -98,9 +98,7 @@ chmod +x bootprep bootprep-install.sh 99_bootprep
 sudo ./bootprep-install.sh
 ```
 
-The installer validates the expected Debian-style GRUB layout before applying its integration.
-
-The installer also performs Snapshot Store Reconciliation when matching snapshot stores are discovered, ensuring the required snapshot store mounts are available before BootPrep is first used.
+The installer validates the expected Debian-style GRUB layout, performs Snapshot Store Reconciliation for any discovered snapshot stores, and enables BootPrep's GRUB integration by adding `BOOTPREP_BTRFS_SNAPSHOT_BOOTING="true"` to `/etc/default/grub`. This is a one-time configuration: once enabled, the normal GRUB configuration remains BootPrep-aware while individual snapshot boots are selected only when a rollback or explicit `bootprep prepare` operation occurs.
 
 ## Upgrading
 
