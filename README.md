@@ -113,6 +113,7 @@ sudo ./bootprep-upgrade.sh
 The upgrade script requires an existing BootPrep installation. It reinstalls and verifies only:
 
 - `/usr/sbin/bootprep`
+- `/usr/sbin/bootprep-btrfs`
 - `/usr/lib/snapper/plugins/99_bootprep`
 
 It does not modify the GRUB integration, generated runtime, configuration, state, or backups. New installations must use `bootprep-install.sh`.
