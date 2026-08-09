@@ -10,6 +10,31 @@ The project follows Semantic Versioning.
 
 ---
 
+## [1.1.0] - 2026-08-09
+
+### Added
+
+- Added `bootprep-btrfs`, a lightweight Btrfs orchestrator.
+- Added `bootprep-btrfs activate <snapshot-number> [mount-point]` for activating an existing snapshot and preparing it for the next boot.
+- The `activate` workflow makes the selected snapshot writable, sets it as the Btrfs default subvolume, and invokes `bootprep prepare <snapshot-number>` as the final preparation step.
+- The optional mount point defaults to `/`.
+- Commands not handled as BootPrep-specific workflows are passed directly to `/usr/bin/btrfs` without interpretation.
+
+### Changed
+
+- `bootprep-install.sh` now installs and verifies `bootprep-btrfs` alongside the BootPrep engine and Snapper plugin.
+- `bootprep-upgrade.sh` now reinstalls and verifies `bootprep-btrfs` alongside the BootPrep engine and Snapper plugin.
+- Manual Btrfs snapshot activation can now be performed through `bootprep-btrfs activate` instead of manually coordinating the individual Btrfs operations and BootPrep preparation step.
+
+### Architecture
+
+- Btrfs workflow orchestration is separated from the BootPrep preparation engine.
+- `bootprep` remains responsible only for preparing an already-selected writable snapshot for the next boot.
+- `bootprep-btrfs` handles Btrfs-specific workflows while delegating final boot preparation to `bootprep`.
+- `99_bootprep` remains the minimal Snapper rollback bridge to the BootPrep preparation engine.
+
+---
+
 ## [1.0.1] - 2026-08-06
 
 ### Added

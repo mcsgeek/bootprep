@@ -196,6 +196,7 @@ The engine does not care which external workflow selected the snapshot.
 The snapshot may have been selected through:
 
 - A Snapper rollback.
+- The `bootprep-btrfs` orchestrator.
 - Manual Btrfs commands.
 - A future graphical interface.
 - Another management utility.
@@ -261,43 +262,43 @@ bootprep prepare <snapshot-number>
 Reboot
 ```
 
-This allows BootPrep to prepare snapshots selected without Snapper.
+This allows BootPrep to prepare snapshots selected without Snapper or the `bootprep-btrfs` orchestrator.
 
 ---
 
-## Future Activation Workflow
+## Btrfs Activation Workflow
 
-The current `prepare` command operates only after another tool, such as Snapper, has created the writable rollback snapshot and set the Btrfs default subvolume.
+BootPrep includes the `bootprep-btrfs` orchestrator for manually activating an existing Snapper snapshot.
 
-In the current Snapper-integrated workflow, the rollback has already occurred before BootPrep is invoked:
+Its interface is:
 
 ```text
-User invokes Snapper rollback
+bootprep-btrfs activate <snapshot-number> [mount-point]
+```
+
+The mount point defaults to `/`.
+
+The activation workflow is:
+
+```text
+User selects an existing snapshot
         |
         v
-Snapper performs the rollback
+bootprep-btrfs makes the snapshot writable
         |
         v
-Snapper creates the resulting writable snapshot
+bootprep-btrfs sets it as the Btrfs default subvolume
         |
         v
-Snapper sets it as the Btrfs default subvolume
-        |
-        v
-99_bootprep receives the resulting snapshot number
-        |
-        v
-bootprep prepare <resulting-snapshot-number>
+bootprep prepare <snapshot-number>
         |
         v
 BootPrep prepares the system for the next boot
 ```
 
-A future BootPrep companion utility (`bootprep-btrfs`) may provide an `activate` workflow that creates a writable snapshot, sets it as the default Btrfs subvolume, and then invokes the existing BootPrep preparation engine.
+Btrfs workflow orchestration remains separate from the BootPrep preparation engine. The `bootprep` engine continues to prepare only an already-selected writable snapshot and its boot environment.
 
-The BootPrep engine itself will remain responsible only for preparing an already-selected writable snapshot for the next boot.
-
-These additional responsibilities will belong to the higher-level `activate` workflow. They will not change the responsibility of the underlying `prepare` operation, which remains focused exclusively on preparing an already-selected writable snapshot and its boot environment for the next reboot.
+Additional BootPrep-aware Btrfs workflows may be added to `bootprep-btrfs` without expanding the responsibility of the underlying BootPrep engine.
 
 ---
 
@@ -329,7 +330,7 @@ Transaction-time EFI backups are retained beneath:
 
 ## Project Structure
 
-The repository keeps the BootPrep engine, Snapper plugin, installer, and component upgrade script together. The installer performs initial system and GRUB integration, while the upgrade script refreshes only the engine and Snapper plugin on an existing installation.
+The repository keeps the BootPrep engine, Btrfs orchestrator, Snapper plugin, installer, and component upgrade script together. The installer performs initial system and GRUB integration, while the upgrade script refreshes the engine, Btrfs orchestrator, and Snapper plugin on an existing installation.
 
 ```text
 bootprep/
@@ -339,11 +340,12 @@ bootprep/
 ├── LICENSE
 ├── README.md
 ├── bootprep
+├── bootprep-btrfs
 ├── bootprep-install.sh
 └── bootprep-upgrade.sh
 ```
 
-The installer performs the initial installation of the engine, Snapper plugin, runtime library, and GRUB integration. The upgrade script requires an existing BootPrep installation and reinstalls only the engine and Snapper plugin.
+The installer performs the initial installation of the engine, Btrfs orchestrator, Snapper plugin, runtime library, and GRUB integration. The upgrade script requires an existing BootPrep installation and reinstalls only the engine, Btrfs orchestrator, and Snapper plugin.
 
 ---
 
@@ -394,15 +396,15 @@ All should invoke the same engine interface.
 
 ---
 
-## Version 1.0.1
+## Version 1.1.0
 
-BootPrep Version 1.0.1 prepares a supported writable Btrfs snapshot to become the next bootable system while automatically performing Snapshot Store Reconciliation for any discovered snapshot stores.
+BootPrep Version 1.1.0 adds the `bootprep-btrfs` orchestrator while preserving the existing BootPrep preparation engine and its responsibility.
 
-The `prepare` operation remains responsible only for preparing an already-selected writable snapshot and its boot environment. Snapshot selection, rollback, writable snapshot creation, and Btrfs subvolume management remain the responsibility of the invoking workflow.
+`bootprep-btrfs` provides Btrfs-specific workflows such as `activate`, while `bootprep prepare` remains responsible only for preparing an already-selected writable snapshot and its boot environment for the next boot.
 
-Future BootPrep companion utilities, including the planned `bootprep-btrfs`, will build upon this preparation engine rather than duplicating its functionality.
+The Snapper plugin and Btrfs orchestrator therefore provide separate paths into the same BootPrep preparation engine without duplicating its functionality.
 
-That separation of responsibilities defines the BootPrep architecture.
+That separation of responsibilities continues to define the BootPrep architecture.
 
 ---
 

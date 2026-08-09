@@ -71,14 +71,15 @@ Nothing redirects the next boot until **you** initiate a rollback or intentional
 
 ## Current Components
 
-The repository currently contains four executable components:
+The repository currently contains five executable components:
 
 | Component | Responsibility | Installed location |
 | --- | --- | --- |
 | `bootprep` | Boot preparation engine | `/usr/sbin/bootprep` |
+| `bootprep-btrfs` | Btrfs orchestrator | `/usr/sbin/bootprep-btrfs` |
 | `99_bootprep` | Snapper rollback plugin | `/usr/lib/snapper/plugins/99_bootprep` |
 | `bootprep-install.sh` | Installer and GRUB integration | Run from the repository; not installed as a command |
-| `bootprep-upgrade.sh` | Reinstalls and verifies the BootPrep engine and Snapper plugin on an existing installation | Run from the repository; not installed as a command |
+| `bootprep-upgrade.sh` | Reinstalls and verifies the BootPrep engine, Btrfs orchestrator, and Snapper plugin on an existing installation | Run from the repository; not installed as a command |
 
 The installer also generates:
 
@@ -91,10 +92,10 @@ The installer also generates:
 
 > **Important:** Installing BootPrep does not immediately change how the system boots. However, after the first rollback has been prepared and the system begins operating from a writable snapshot, BootPrep’s GRUB integration becomes part of the boot architecture. BootPrep should not be removed from such a system. Returning to the original root-subvolume model would require a deliberate filesystem and bootloader migration, not a normal uninstall.
 
-Keep `bootprep`, `bootprep-install.sh`, and `99_bootprep` together in the repository root, then run:
+Keep `bootprep`, `bootprep-btrfs`, `bootprep-install.sh`, and `99_bootprep` together in the repository root, then run:
 
 ```bash
-chmod +x bootprep bootprep-install.sh 99_bootprep
+chmod +x bootprep bootprep-btrfs bootprep-install.sh 99_bootprep
 sudo ./bootprep-install.sh
 ```
 
@@ -102,10 +103,10 @@ The installer validates the expected Debian-style GRUB layout, performs Snapshot
 
 ## Upgrading
 
-Keep `bootprep`, `99_bootprep`, and `bootprep-upgrade.sh` together in the repository root, then run:
+Keep `bootprep`, `bootprep-btrfs`, `99_bootprep`, and `bootprep-upgrade.sh` together in the repository root, then run:
 
 ```bash
-chmod +x bootprep 99_bootprep bootprep-upgrade.sh
+chmod +x bootprep bootprep-btrfs 99_bootprep bootprep-upgrade.sh
 sudo ./bootprep-upgrade.sh
 ```
 
@@ -122,11 +123,21 @@ It does not modify the GRUB integration, generated runtime, configuration, state
 
 ### Snapper rollback
 
-When Snapper performs a rollback operation, the `99_bootprep` plugin receives the selected snapshot number and invokes:
+When Snapper performs a rollback, the `99_bootprep` plugin receives the resulting snapshot number and invokes:
 
 ```text
 /usr/sbin/bootprep prepare <snapshot-number>
 ```
+
+### Btrfs activation
+
+`bootprep-btrfs` provides a manual activation workflow that makes an existing Snapper snapshot writable, sets it as the Btrfs default subvolume, and delegates final boot preparation to BootPrep:
+
+```bash
+sudo bootprep-btrfs activate <snapshot-number> [mount-point]
+```
+
+The mount point defaults to `/`. Other Btrfs operations remain available through `bootprep-btrfs`.
 
 ### Manual preparation
 
@@ -169,11 +180,13 @@ BootPrep is guided by a few simple principles:
 
 ---
 
-## Version 1.0.1
+## Version 1.1.0
 
-BootPrep Version 1.0.1 introduces automatic Snapshot Store Reconciliation, improving compatibility with existing systems while preserving the existing Btrfs mount policy.
+BootPrep Version 1.1.0 introduces `bootprep-btrfs`, a lightweight Btrfs orchestrator that provides BootPrep-aware Btrfs workflows while continuing to use the existing BootPrep preparation engine.
 
-Development now shifts toward Version 1.1.0 and the planned `bootprep-btrfs` companion utility, which will extend the native `btrfs` command with optional BootPrep-aware workflows while continuing to use the existing BootPrep preparation engine.
+The initial `activate` workflow makes an existing snapshot writable, sets it as the Btrfs default subvolume, and delegates final boot preparation to `bootprep prepare`.
+
+The BootPrep engine itself remains unchanged in responsibility: it prepares an already-selected writable snapshot for the next boot.
 
 ---
 

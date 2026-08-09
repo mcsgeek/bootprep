@@ -2,10 +2,10 @@
 #
 # BootPrep Upgrade
 #
-# Reinstalls and verifies the BootPrep executable and Snapper plugin for an
-# existing BootPrep installation.
+# Reinstalls and verifies the BootPrep executable, Btrfs orchestrator, and Snapper
+# plugin for an existing BootPrep installation.
 #
-# Version: 1.0.1
+# Version: 1.1.0
 # License: GPL-3.0-or-later
 #
 # Copyright (C) 2026 Scott McClain
@@ -20,9 +20,11 @@ set -Eeuo pipefail
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 readonly BOOTPREP_SOURCE="${SCRIPT_DIR}/bootprep"
+readonly BOOTPREP_BTRFS_SOURCE="${SCRIPT_DIR}/bootprep-btrfs"
 readonly BOOTPREP_SNAPPER_SOURCE="${SCRIPT_DIR}/99_bootprep"
 
 readonly BOOTPREP_DEST="/usr/sbin/bootprep"
+readonly BOOTPREP_BTRFS_DEST="/usr/sbin/bootprep-btrfs"
 readonly BOOTPREP_SNAPPER_DEST="/usr/lib/snapper/plugins/99_bootprep"
 
 ###############################################################################
@@ -73,11 +75,17 @@ require_source_components() {
     [[ -f "${BOOTPREP_SOURCE}" ]] \
         || die "Missing source file: ${BOOTPREP_SOURCE}"
 
+    [[ -f "${BOOTPREP_BTRFS_SOURCE}" ]] \
+        || die "Missing source file: ${BOOTPREP_BTRFS_SOURCE}"
+
     [[ -f "${BOOTPREP_SNAPPER_SOURCE}" ]] \
         || die "Missing source file: ${BOOTPREP_SNAPPER_SOURCE}"
 
     bash -n "${BOOTPREP_SOURCE}" \
         || die "BootPrep source contains shell syntax errors."
+
+    bash -n "${BOOTPREP_BTRFS_SOURCE}" \
+        || die "BootPrep Btrfs source contains shell syntax errors."
 
     bash -n "${BOOTPREP_SNAPPER_SOURCE}" \
         || die "BootPrep Snapper source contains shell syntax errors."
@@ -101,6 +109,14 @@ install_bootprep_components() {
     printf "File : %s\n" "${BOOTPREP_DEST}"
 
     install -Dm755 \
+        "${BOOTPREP_BTRFS_SOURCE}" \
+        "${BOOTPREP_BTRFS_DEST}"
+
+    ok "BootPrep Btrfs installed."
+
+    printf "File : %s\n" "${BOOTPREP_BTRFS_DEST}"
+
+    install -Dm755 \
         "${BOOTPREP_SNAPPER_SOURCE}" \
         "${BOOTPREP_SNAPPER_DEST}"
 
@@ -117,17 +133,26 @@ verify_bootprep_components() {
     [[ -x "${BOOTPREP_DEST}" ]] \
         || die "BootPrep is missing."
 
+    [[ -x "${BOOTPREP_BTRFS_DEST}" ]] \
+        || die "BootPrep Btrfs is missing."
+
     [[ -x "${BOOTPREP_SNAPPER_DEST}" ]] \
         || die "BootPrep Snapper is missing."
 
     bash -n "${BOOTPREP_DEST}" \
         || die "BootPrep contains shell syntax errors."
 
+    bash -n "${BOOTPREP_BTRFS_DEST}" \
+        || die "BootPrep Btrfs contains shell syntax errors."
+
     bash -n "${BOOTPREP_SNAPPER_DEST}" \
         || die "BootPrep Snapper contains shell syntax errors."
 
     cmp -s "${BOOTPREP_SOURCE}" "${BOOTPREP_DEST}" \
         || die "Installed BootPrep does not match its source file."
+
+    cmp -s "${BOOTPREP_BTRFS_SOURCE}" "${BOOTPREP_BTRFS_DEST}" \
+        || die "Installed BootPrep Btrfs does not match its source file."
 
     cmp -s "${BOOTPREP_SNAPPER_SOURCE}" "${BOOTPREP_SNAPPER_DEST}" \
         || die "Installed BootPrep Snapper does not match its source file."
