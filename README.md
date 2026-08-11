@@ -200,7 +200,7 @@ Each utility has a single responsibility and can be used independently or togeth
 Current companion projects include:
 
 - **cleanup-bootstrap-root** – Safely cleans the original bootstrap `@` root while preserving its Btrfs subvolumes.
-- **snapshot-chroot** – Creates a recovery chroot from a selected Btrfs/Snapper root snapshot, with automatic detection of the last successfully booted snapshot.
+- **snapshot-chroot** – Creates a recovery chroot from the last successfully booted or manually selected Btrfs/Snapper snapshot.
 - **dpkg-pre-post-snapper** – Creates descriptive Snapper pre/post snapshots around package transactions.
 - **add_subvolumes** – Converts selected root and home directories into independent Btrfs subvolumes.
 - **add_updategrub-service** – Installs a systemd service that runs `update-grub` during shutdown and reboot.
