@@ -113,7 +113,7 @@ sudo ./bootprep-upgrade.sh
 
 For a clean v2 or later installation, the upgrader verifies the environment and runs the current installer through its controlled internal upgrade path. This path does not require Debian's `dpkg-divert` and is available across supported distributions.
 
-For a Debian Version 1 installation, the upgrader performs a complete migration before installing v2:
+When upgrading an existing Debian system from BootPrep 1.x, the upgrader first performs a complete migration and then installs BootPrep 2.0.0:
 
 - Creates a timestamped recovery archive beneath `/var/lib/bootprep/backups`.
 - Validates BootPrep's saved and diverted upstream `10_linux` files.
@@ -271,6 +271,8 @@ Version 2.0.0 has been tested through fresh installation, v1 migration where app
 ## Companion Utilities
 
 BootPrep is the flagship project in a collection of companion utilities designed to enhance native Btrfs, Snapper, and GRUB workflows.
+
+Compatibility statements in this README apply only to BootPrep. Companion utilities are separate projects with their own platform requirements and test coverage.
 
 Current companion projects include:
 
