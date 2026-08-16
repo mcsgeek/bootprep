@@ -32,7 +32,6 @@ readonly LEGACY_VARIABLE="BOOTPREP_BTRFS_SNAPSHOT_BOOTING"
 
 readonly LEGACY_RUNTIME="/usr/lib/bootprep/bootprep-runtime.sh"
 readonly LEGACY_STATE="/var/lib/bootprep/next-boot"
-readonly LEGACY_CONFIG="/etc/bootprep/bootprep.conf"
 readonly MIGRATION_ROOT="/var/lib/bootprep/backups"
 
 MIGRATION_DIR=""
@@ -65,8 +64,7 @@ installation_is_present() {
         "$BTRFS_DEST" \
         "$SNAPPER_DEST" \
         "$LEGACY_RUNTIME" \
-        "$LEGACY_STATE" \
-        "$LEGACY_CONFIG"; do
+        "$LEGACY_STATE"; do
         path_exists "$path" && return 0
     done
 
@@ -131,7 +129,7 @@ legacy_architecture_is_present() {
 
     grub_script_is_legacy "$GRUB_SCRIPT" 2>/dev/null && return 0
     grep -qE "^[[:space:]]*${LEGACY_VARIABLE}=" "$GRUB_DEFAULT" 2>/dev/null && return 0
-    [[ -e "$LEGACY_RUNTIME" || -e "$LEGACY_STATE" || -e "$LEGACY_CONFIG" ]] \
+    [[ -e "$LEGACY_RUNTIME" || -e "$LEGACY_STATE" ]] \
         && return 0
     return 1
 }
@@ -288,14 +286,11 @@ remove_legacy_artifacts() {
 
     archive_legacy_file "$LEGACY_RUNTIME" "bootprep-runtime.sh"
     archive_legacy_file "$LEGACY_STATE" "next-boot"
-    archive_legacy_file "$LEGACY_CONFIG" "bootprep.conf"
 
     rmdir /usr/lib/bootprep 2>/dev/null || true
-    rmdir /etc/bootprep 2>/dev/null || true
 
     [[ ! -e "$LEGACY_RUNTIME" ]] || die "Legacy runtime remains installed."
     [[ ! -e "$LEGACY_STATE" ]] || die "Legacy state remains installed."
-    [[ ! -e "$LEGACY_CONFIG" ]] || die "Legacy configuration remains installed."
 
     ok "Legacy runtime architecture removed."
 }
@@ -309,7 +304,7 @@ verify_legacy_cleanup() {
         || die "BootPrep integration remains in $GRUB_SCRIPT."
     ! grep -qE "^[[:space:]]*${LEGACY_VARIABLE}=" "$GRUB_DEFAULT" \
         || die "Legacy GRUB setting remains installed."
-    [[ ! -e "$LEGACY_RUNTIME" && ! -e "$LEGACY_STATE" && ! -e "$LEGACY_CONFIG" ]] \
+    [[ ! -e "$LEGACY_RUNTIME" && ! -e "$LEGACY_STATE" ]] \
         || die "Legacy runtime artifacts remain installed."
 
     ok "Legacy BootPrep integration completely removed."

@@ -25,7 +25,6 @@ readonly BTRFS_DEST="/usr/sbin/bootprep-btrfs"
 readonly SNAPPER_DEST="/usr/lib/snapper/plugins/99_bootprep"
 readonly LEGACY_RUNTIME="/usr/lib/bootprep/bootprep-runtime.sh"
 readonly LEGACY_STATE="/var/lib/bootprep/next-boot"
-readonly LEGACY_CONFIG="/etc/bootprep/bootprep.conf"
 
 readonly UPGRADE_MODE="${BOOTPREP_INTERNAL_UPGRADE:-false}"
 
@@ -86,8 +85,7 @@ require_fresh_installation() {
         "$BTRFS_DEST" \
         "$SNAPPER_DEST" \
         "$LEGACY_RUNTIME" \
-        "$LEGACY_STATE" \
-        "$LEGACY_CONFIG"; do
+        "$LEGACY_STATE"; do
         if path_exists "$path"; then
             die "An existing or partial BootPrep installation was detected. Use bootprep-upgrade.sh."
         fi
