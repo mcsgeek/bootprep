@@ -5,6 +5,7 @@
 # 99_bootprep
 #
 # Snapper rollback plugin for BootPrep
+# Version: 2.0.0
 #
 
 set -euo pipefail

@@ -2,45 +2,29 @@
 
 ## Purpose
 
-BootPrep is the activation layer for systems using a default nested Btrfs subvolume layout.
+BootPrep is the activation layer for GRUB-based Linux systems using a nested Btrfs snapshot layout.
 
 It prepares the boot environment after a selected writable snapshot has been presented by the invoking workflow, allowing that snapshot to become the next bootable system while preserving the existing filesystem layout.
 
-BootPrep does **not** create snapshots, choose snapshots, make snapshots writable, set the Btrfs default subvolume, perform rollbacks, or replace the boot loader. Those responsibilities remain with Btrfs, Snapper, or the workflow that invokes BootPrep.
-
-The BootPrep engine can be called directly or through the included Snapper rollback plugin.
+BootPrep does **not** create snapshots, choose snapshots, make snapshots writable, set the Btrfs default subvolume, perform rollbacks, or replace GRUB. Those responsibilities remain with Btrfs, Snapper, GRUB, or the workflow that invokes BootPrep.
 
 ---
 
 ## Design Philosophy
 
-BootPrep exists because no individual Linux component performs the complete transition between a selected writable snapshot and a successfully bootable system.
-
-Each component already performs its own job well.
+No individual Linux component performs the complete transition between a selected writable snapshot and a successfully bootable system.
 
 | Component | Responsibility |
 | --- | --- |
 | Btrfs | Creates writable snapshots, manages subvolumes, and presents the selected root filesystem |
 | Snapper | Creates, manages, and rolls back snapshots |
-| GRUB | Generates boot configuration |
+| GRUB | Generates configuration and installs the platform loader |
 | Linux kernel | Mounts and boots the selected root filesystem |
-| BootPrep | Prepares the boot environment for the next boot |
+| BootPrep | Prepares the selected snapshot's boot environment |
 
 BootPrep is therefore the **activation layer** between the invoking workflow and the next bootable system, not a replacement for any existing project.
 
----
-
-## Mission Statement
-
 > **Snapper and Btrfs present the selected writable snapshot. BootPrep prepares the boot environment for the next boot.**
-
-This statement defines the boundary between Snapper, Btrfs, and BootPrep.
-
-Snapper manages the rollback workflow.
-
-Btrfs creates and presents the writable snapshot.
-
-BootPrep prepares the boot environment.
 
 ---
 
@@ -50,364 +34,440 @@ BootPrep has exactly one responsibility:
 
 > **Prepare the boot environment so a selected writable snapshot becomes the next bootable system.**
 
-Every operation performed by BootPrep exists solely to accomplish that goal.
-
----
+Every operation performed by the engine exists solely to accomplish that goal.
 
 ## What BootPrep Does
 
-To fulfill its single responsibility, the BootPrep engine:
+The engine:
 
-- Accepts a snapshot number through the `prepare` command.
-- Discovers the corresponding nested Btrfs snapshot subvolume.
-- Reconciles required snapshot store mounts.
-- Mounts the selected snapshot.
-- Bind-mounts the runtime filesystems required by the chroot.
-- Enters the snapshot through a chroot.
-- Runs `update-grub` inside the selected snapshot.
-- Discovers and backs up the EFI GRUB configuration.
-- Patches the EFI GRUB prefix for the selected snapshot.
-- Records pending transaction state.
-- Applies EFI backup retention.
+- Accepts a snapshot number through `prepare`.
+- Validates the running Btrfs and UEFI environment.
+- Resolves the base root subvolume and exact nested snapshot path.
+- Mounts the selected snapshot and verifies that it is writable.
+- Reconciles required snapshot-store mounts in the snapshot's `fstab`.
+- Makes the runtime filesystems, separate `/boot`, and EFI System Partition available inside the snapshot as required.
+- Discovers a safe existing EFI bootloader ID.
+- Validates the GRUB platform target and tools inside the snapshot.
+- Runs `grub-mkconfig` inside the snapshot.
+- Refreshes the existing EFI loader inside the snapshot while preserving the firmware boot entry and boot order.
 - Cleans up temporary mounts and files.
-- Exits.
-
-> **Prepare the boot environment so a selected writable snapshot becomes the next bootable system.**
-
----
-
-## Snapshot Store Reconciliation
-
-Snapshot booting requires the appropriate snapshot store mounts to exist within the writable snapshot being prepared.
-
-BootPrep discovers available snapshot stores directly from the Btrfs filesystem and reconciles only the required snapshot store entries in the target system.
-
-The reconciliation policy is intentionally conservative:
-
-- Correct entry → Leave unchanged.
-- Missing entry → Add canonical entry.
-- Incorrect entry → Replace the complete entry.
-- Duplicate active entries → Abort safely.
-- No matching snapshot store → No action.
-
-BootPrep derives mount options from the running system, filters runtime-only mount options, and preserves the existing Btrfs mount policy when generating canonical `fstab` entries.
-
----
 
 ## What BootPrep Does Not Do
 
-BootPrep intentionally avoids responsibilities that already belong to other system components.
+The engine does not:
 
-Snapshot creation, writable snapshot management, rollback operations, filesystem management, and bootloader management remain the responsibility of Btrfs, Snapper, GRUB, or the workflow that presents the selected writable snapshot.
+- Create or delete snapshots.
+- Choose the snapshot to activate.
+- Make snapshots writable.
+- Set the Btrfs default subvolume.
+- Implement Snapper rollback behavior.
+- Repair or change UEFI firmware boot entries or boot order.
+- Patch distribution-provided GRUB scripts.
+- Maintain persistent next-boot state.
+- Manually rewrite EFI GRUB redirect files.
 
-> **BootPrep exists to fill a missing responsibility—not to replace existing ones.**p.
+> **BootPrep exists to fill a missing responsibility—not to replace existing ones.**
 
 ---
 
 ## Boot Preparation Transaction
 
-The BootPrep engine performs a single transaction:
-
 ```text
 Selected writable snapshot
         |
         v
-Discover nested snapshot subvolume
+Validate Btrfs, UEFI, and snapshot number
+        |
+        v
+Discover base root and exact snapshot subvolume
+        |
+        v
+Mount snapshot and verify it is writable
         |
         v
 Reconcile snapshot store mounts
         |
         v
-Mount snapshot and bind runtime filesystems
+Bind runtime, boot, and EFI filesystems
         |
         v
-Enter chroot and run update-grub
+Discover bootloader ID and EFI target
         |
         v
-Discover and back up EFI GRUB configuration
+Enter chroot and run grub-mkconfig
         |
         v
-Patch EFI GRUB prefix
+Run grub-install --no-nvram
         |
         v
-Write pending BootPrep state
-        |
-        v
-Apply backup retention and clean up
+Clean up temporary mounts
         |
         v
 Ready for reboot
 ```
 
-The transaction is successful only when every required stage completes successfully.
+The transaction succeeds only when every required stage completes. A cleanup trap attempts to unmount temporary mounts whenever the engine exits.
 
-A cleanup trap attempts to unmount temporary bind mounts and the selected snapshot whenever the engine exits.
+## Snapshot Discovery
+
+The engine begins with the active root subvolume reported by `findmnt`.
+
+When the active root is already a writable snapshot such as:
+
+```text
+@/.snapshots/8/snapshot
+```
+
+BootPrep removes the nested snapshot suffix to recover the base root:
+
+```text
+@
+```
+
+It also validates the selected snapshot through the snapshot store mounted at:
+
+```text
+/.snapshots/<number>/snapshot
+```
+
+The target must be a real Btrfs subvolume. BootPrep resolves its numeric subvolume ID and mounts by that ID, avoiding path-format differences when the running root is either the base root or an already nested snapshot. The derived base-root name is retained for snapshot-store reconciliation.
+
+The mounted target must report `ro=false`. BootPrep refuses to prepare a read-only snapshot.
 
 ---
 
-## Why BootPrep Runs update-grub
+## Snapshot Store Reconciliation
 
-BootPrep does not run `update-grub` to replace GRUB.
+Snapshot booting requires snapshot stores to remain available after entering a nested root snapshot.
 
-GRUB must regenerate its configuration **inside the environment that will become the next booted system**.
+BootPrep discovers root and home snapshot-store subvolumes directly from Btrfs and reconciles only the corresponding entries in the target system.
 
-Running `update-grub` inside the selected snapshot allows the existing GRUB infrastructure, including BootPrep's installed GRUB runtime integration, to resolve the intended root subvolume correctly.
+The policy is conservative:
 
-BootPrep delegates boot configuration generation to GRUB rather than generating `grub.cfg` itself.
+- Correct entry → Leave unchanged.
+- Missing entry → Add a canonical entry.
+- Incorrect entry → Replace the complete entry.
+- Duplicate active entries → Abort safely.
+- No matching snapshot store → No action.
 
----
+Persistent mount options are derived from the running root filesystem. Runtime-only state, `subvol`, `subvolid`, and `space_cache` options are filtered before a canonical entry is generated.
 
-## GRUB and EFI Integration
-
-The current installer targets Debian-style GRUB systems.
-
-It:
-
-- Verifies `/etc/grub.d/10_linux` and `/etc/default/grub`.
-- Backs up the original GRUB files.
-- Uses `dpkg-divert` to preserve the distribution-provided `10_linux`.
-- Installs a BootPrep-aware `10_linux`.
-- Adds `BOOTPREP_BTRFS_SNAPSHOT_BOOTING="true"` to `/etc/default/grub`.
-- Generates `/usr/lib/bootprep/bootprep-runtime.sh`.
-- Runs `update-grub`.
-
-`BOOTPREP_BTRFS_SNAPSHOT_BOOTING="true"` is the persistent enable switch for BootPrep's GRUB integration. The installer sets it once, allowing the generated GRUB configuration to remain BootPrep-aware without selecting a snapshot by itself. When no pending BootPrep state exists, normal root-subvolume resolution remains unchanged.
-
-During a prepare transaction, the engine also backs up and patches the vendor EFI `grub.cfg` prefix so the firmware-loaded GRUB configuration points into the selected snapshot.
-
-This integration is intended to preserve normal boot behavior when no pending BootPrep state exists.
-
-Before the first rollback, the system continues to boot from its original root subvolume. After Snapper performs a rollback and BootPrep prepares the resulting writable snapshot, the system boots from a nested snapshot subvolume. From that point forward, BootPrep’s GRUB integration is required to resolve the nested root subvolume correctly. Removing BootPrep is therefore unsupported; returning to the original root-subvolume layout would require a deliberate filesystem and bootloader migration.
-
----
-
-## Engine Independence
-
-The BootPrep engine is independent of Snapper.
-
-Its interface is:
-
-```text
-bootprep prepare <snapshot-number>
-```
-
-The engine does not care which external workflow selected the snapshot.
-
-The snapshot may have been selected through:
-
-- A Snapper rollback.
-- The `bootprep-btrfs` orchestrator.
-- Manual Btrfs commands.
-- A future graphical interface.
-- Another management utility.
-
-The engine performs the same preparation transaction regardless of the caller.
-
----
-
-## Snapper Integration
-
-BootPrep includes the `99_bootprep` Snapper plugin, installed at:
-
-```text
-/usr/lib/snapper/plugins/99_bootprep
-```
-
-The current installer installs this component alongside the engine. The plugin ignores non-rollback operations.
-
-For a rollback operation, Snapper supplies the resulting snapshot number and the plugin invokes:
-
-```text
-/usr/sbin/bootprep prepare <snapshot-number>
-```
-
-The normal integrated workflow is:
-
-```text
-snapper rollback
-        |
-        v
-Snapper creates/selects the writable rollback result
-        |
-        v
-99_bootprep receives the snapshot number
-        |
-        v
-bootprep prepare <snapshot-number>
-        |
-        v
-BootPrep engine prepares the next boot
-```
-
-The plugin intentionally contains minimal logic. Its responsibility is to validate the callback data and launch the engine.
-
----
-
-## Manual Workflow
-
-BootPrep also supports manual invocation.
-
-The external workflow remains responsible for creating the writable snapshot and setting the correct Btrfs default subvolume:
-
-```text
-Create writable snapshot
-        |
-        v
-Set the Btrfs default subvolume
-        |
-        v
-bootprep prepare <snapshot-number>
-        |
-        v
-Reboot
-```
-
-This allows BootPrep to prepare snapshots selected without Snapper or the `bootprep-btrfs` orchestrator.
-
----
-
-## Btrfs Activation Workflow
-
-BootPrep includes the `bootprep-btrfs` orchestrator for manually activating an existing Snapper snapshot.
-
-Its interface is:
-
-```text
-bootprep-btrfs activate <snapshot-number> [mount-point]
-```
-
-The mount point defaults to `/`.
-
-The activation workflow is:
-
-```text
-User selects an existing snapshot
-        |
-        v
-bootprep-btrfs makes the snapshot writable
-        |
-        v
-bootprep-btrfs sets it as the Btrfs default subvolume
-        |
-        v
-bootprep prepare <snapshot-number>
-        |
-        v
-BootPrep prepares the system for the next boot
-```
-
-Btrfs workflow orchestration remains separate from the BootPrep preparation engine. The `bootprep` engine continues to prepare only an already-selected writable snapshot and its boot environment.
-
-Additional BootPrep-aware Btrfs workflows may be added to `bootprep-btrfs` without expanding the responsibility of the underlying BootPrep engine.
-
----
-
-## Runtime State
-
-BootPrep uses:
-
-```text
-/var/lib/bootprep/next-boot
-```
-
-to record the pending subvolume, snapshot number, and transaction status.
-
-The GRUB runtime integration consults this state while generating the boot configuration. If no BootPrep state file is present, normal root-subvolume resolution remains unchanged.
-
-Installer backups are stored beneath:
+Before modifying `fstab`, BootPrep creates a timestamped copy beneath:
 
 ```text
 /var/lib/bootprep/backups
 ```
 
-Transaction-time EFI backups are retained beneath:
+The replacement is verified after writing. If verification fails, the original is restored.
 
-```text
-/var/lib/bootprep/efi-backups
-```
+The fresh installer performs the same reconciliation for the running system.
 
 ---
 
-## Project Structure
+## Chroot Environment
 
-The repository keeps the BootPrep engine, Btrfs orchestrator, Snapper plugin, installer, and component upgrade script together. The installer performs initial system and GRUB integration, while the upgrade script refreshes the engine, Btrfs orchestrator, and Snapper plugin on an existing installation.
+GRUB configuration must be generated from the environment that will become the next system.
+
+BootPrep mounts the selected Btrfs subvolume at a private directory beneath `/run` and makes these filesystems available inside it:
+
+- `/dev`
+- `/proc`
+- `/sys`
+- `/run`
+- `/boot`, when it is a separate mount
+- `/boot/efi`
+
+`/dev` and `/sys` are recursively bound so required child mounts remain visible. Their propagation is made slave to prevent unmount operations inside the transaction from propagating back to the host.
+
+`/boot/efi` must already be mounted on the running system. It is bound explicitly inside the snapshot whether or not `/boot` is separate.
+
+Before GRUB operations begin, BootPrep verifies that `grub-mkconfig` and `grub-install` are installed in the selected snapshot.
+
+---
+
+## GRUB Configuration Generation
+
+Inside the selected snapshot, BootPrep runs:
+
+```text
+grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+The command runs through a sanitized environment with only the required home, path, locale, terminal, and temporary-directory values.
+
+BootPrep does not generate `grub.cfg` itself. It delegates configuration generation to the distribution's installed GRUB tooling and verifies that the resulting file exists and is nonempty.
+
+Version 2.0.0 does not patch `10_linux`. The selected snapshot is the chroot root, allowing ordinary GRUB scripts to inspect and configure that environment directly.
+
+---
+
+## EFI Bootloader Discovery
+
+BootPrep identifies the existing bootloader ID rather than inventing a new one.
+
+The selected snapshot's `/etc/os-release` supplies `ID` and `ID_LIKE` candidates. BootPrep enumerates directories beneath:
+
+```text
+/boot/efi/EFI
+```
+
+A directory qualifies only when:
+
+- Its name contains only safe bootloader-ID characters.
+- It contains a GRUB or shim EFI executable.
+
+OS identity comparison is case-insensitive because `os-release` capitalization may differ from the FAT EFI directory. The actual directory spelling is preserved when passed to GRUB.
+
+If no OS identity matches, BootPrep accepts a nonstandard bootloader ID such as `GRUB` only when exactly one qualifying loader directory exists. Multiple unmatched candidates are ambiguous and cause a safe abort.
+
+The host architecture maps to a supported GRUB EFI target:
+
+| Machine architecture | GRUB target |
+| --- | --- |
+| `x86_64` | `x86_64-efi` |
+| `aarch64`, `arm64` | `arm64-efi` |
+| `i386` family | `i386-efi` |
+
+The corresponding platform directory must exist beneath `/usr/lib/grub` inside the selected snapshot.
+
+---
+
+## GRUB Installation
+
+After configuration generation, BootPrep runs the equivalent of:
+
+```text
+grub-install \
+    --target=<validated-efi-target> \
+    --efi-directory=/boot/efi \
+    --bootloader-id=<validated-existing-id> \
+    --no-nvram
+```
+
+`--no-nvram` is a deliberate safety boundary. BootPrep assumes the existing UEFI boot configuration is working, refreshes the loader files and prefix, and preserves the firmware boot entry and boot order. Repairing missing or damaged firmware entries is a separate recovery task outside BootPrep's scope.
+
+This operation performs necessary per-snapshot work. The GRUB prefix must resolve into the newly selected nested snapshot.
+
+On Debian, the prefix is commonly represented by an EFI-side redirect file:
+
+```text
+set prefix=($root)'/@/.snapshots/8/snapshot/boot/grub'
+```
+
+Other distributions, including tested EndeavourOS configurations, may embed the prefix directly in the EFI executable and have no EFI-side `grub.cfg`. Both layouts are handled by `grub-install`; BootPrep does not manually interpret or rewrite either representation.
+
+---
+
+## Engine Independence
+
+The engine interface is:
+
+```text
+bootprep prepare <snapshot-number>
+```
+
+The engine does not care which external workflow selected the snapshot. The caller may be:
+
+- A Snapper rollback.
+- `bootprep-btrfs activate`.
+- A manual Btrfs workflow.
+- A future graphical interface.
+- Another management utility.
+
+Every path converges on the same preparation transaction.
+
+---
+
+## Snapper Integration
+
+The `99_bootprep` plugin is installed at:
+
+```text
+/usr/lib/snapper/plugins/99_bootprep
+```
+
+It ignores non-rollback operations. For a rollback callback, Snapper supplies the resulting writable snapshot number and the plugin executes:
+
+```text
+/usr/sbin/bootprep prepare <snapshot-number>
+```
+
+```text
+snapper rollback
+        |
+        v
+Snapper creates and selects writable rollback result
+        |
+        v
+99_bootprep receives resulting snapshot number
+        |
+        v
+bootprep prepare <snapshot-number>
+        |
+        v
+Ready for reboot
+```
+
+The plugin contains no Btrfs, GRUB, or discovery logic.
+
+---
+
+## Btrfs Orchestration
+
+`bootprep-btrfs` is a thin wrapper around `/usr/bin/btrfs`.
+
+Its BootPrep-defined interface is:
+
+```text
+bootprep-btrfs activate <snapshot-number> [mount-point]
+```
+
+The activation transaction:
+
+```text
+Validate existing snapshot
+        |
+        v
+Set snapshot ro=false
+        |
+        v
+Set snapshot as Btrfs default subvolume
+        |
+        v
+bootprep prepare <snapshot-number>
+```
+
+All other arguments pass directly to native Btrfs. This prevents the wrapper from becoming a second Btrfs command parser.
+
+---
+
+## Fresh Installation
+
+`bootprep-install.sh` is fresh-install only.
+
+Before installation it checks for the installed engine, orchestrator, Snapper plugin, and known legacy component files. Any complete or partial footprint causes the installer to stop and direct the user to `bootprep-upgrade.sh`.
+
+For an eligible system, it validates the environment, reconciles snapshot-store mounts, installs the three runtime components, and verifies them byte-for-byte.
+
+The installer does not alter GRUB configuration or install persistent boot integration.
+
+---
+
+## Upgrade and Version 1 Migration
+
+`bootprep-upgrade.sh` is the only supported path for an existing installation.
+
+### Clean future upgrade
+
+If no v1 artifacts exist, migration is skipped and the upgrader invokes the current installer through a controlled internal upgrade mode. Clean upgrades do not require Debian's `dpkg-divert`, allowing the same path to operate on other supported distributions.
+
+### Version 1 migration
+
+If a v1 diversion, patched GRUB script, GRUB setting, runtime, state file, or configuration is detected, the upgrader performs a recoverable migration:
+
+```text
+Validate complete v2 environment
+        |
+        v
+Create timestamped migration archive
+        |
+        v
+Validate saved and diverted upstream 10_linux
+        |
+        v
+Archive patched v1 10_linux
+        |
+        v
+Remove diversion and restore upstream 10_linux
+        |
+        v
+Verify restored script byte-for-byte
+        |
+        v
+Back up grub defaults and remove legacy setting
+        |
+        v
+Archive runtime, state, and configuration
+        |
+        v
+Verify complete legacy cleanup
+        |
+        v
+Install current BootPrep version
+```
+
+The v1 migration remains permanently available because users may upgrade directly from v1 to a much later release.
+
+The migration archive is stored beneath `/var/lib/bootprep/backups` with mode `0700`. Active legacy files are moved into the archive rather than discarded.
+
+Version 1 migration is supported only on systems with the Debian `dpkg-divert` mechanism used by that release. If legacy artifacts are detected without it, the upgrader stops before making changes.
+
+---
+
+## Failure and Cleanup Behavior
+
+The scripts use strict shell execution and stop when required validation or commands fail.
+
+The engine cleanup sequence unmounts:
+
+1. `/boot/efi`
+2. A separately bound `/boot`
+3. Runtime bind mounts
+4. The selected snapshot
+
+Temporary directories are removed only after their mounts have been removed. Failed cleanup produces a warning and leaves the working directory available for inspection rather than deleting through a live mount.
+
+Migration refuses unexpected diversion paths, unexpected diversion owners, symbolic legacy artifacts, invalid upstream GRUB scripts, ambiguous loader identities, and restoration mismatches.
+
+---
+
+## Repository Layout
 
 ```text
 bootprep/
-├── .gitignore
-├── 99_bootprep
-├── ARCHITECTURE.md
-├── LICENSE
-├── README.md
 ├── bootprep
 ├── bootprep-btrfs
+├── 99_bootprep
 ├── bootprep-install.sh
-└── bootprep-upgrade.sh
+├── bootprep-upgrade.sh
+├── README.md
+├── ARCHITECTURE.md
+├── BOOTPREP_BTRFS.md
+├── SNAPPER_PLUGIN.md
+├── CHANGELOG.md
+└── LICENSE
 ```
 
-The installer performs the initial installation of the engine, Btrfs orchestrator, Snapper plugin, runtime library, and GRUB integration. The upgrade script requires an existing BootPrep installation and reinstalls only the engine, Btrfs orchestrator, and Snapper plugin.
+## Installed Layout
+
+```text
+/usr/sbin/bootprep
+/usr/sbin/bootprep-btrfs
+/usr/lib/snapper/plugins/99_bootprep
+```
+
+Backups and migration archives are stored beneath:
+
+```text
+/var/lib/bootprep/backups
+```
+
+There is no v2 runtime library or next-boot state file.
 
 ---
 
-## Design Principles
+## Version 2.0.0 Architecture
 
-### 1. Use Existing Components
+Version 2.0.0 removes the original architecture built around:
 
-If Linux already provides a reliable solution, BootPrep should use it instead of replacing it.
+- A diverted and patched `/etc/grub.d/10_linux`.
+- `BOOTPREP_BTRFS_SNAPSHOT_BOOTING` in `/etc/default/grub`.
+- `/usr/lib/bootprep/bootprep-runtime.sh`.
+- `/var/lib/bootprep/next-boot`.
+- Manual EFI redirect backup and patching.
 
-Examples:
+The replacement architecture is direct and transactional:
 
-- Use Snapper for rollback.
-- Use Btrfs for snapshot and subvolume management.
-- Use GRUB for boot configuration generation.
+> **Mount the selected writable snapshot, enter it, let its GRUB tooling generate configuration, and safely refresh the existing EFI loader without changing the system's firmware boot configuration.**
 
-### 2. Keep the Engine Focused
-
-Every operation inside the BootPrep engine should contribute directly to preparing the next boot environment.
-
-Anything else belongs to the invoking workflow or another component.
-
-### 3. One Responsibility
-
-The engine performs one preparation transaction.
-
-It prepares the selected snapshot for boot.
-
-Nothing more.
-
-### 4. Separation of Responsibilities
-
-The engine, Snapper plugin, installer, component upgrade script, and generated runtime library have distinct responsibilities.
-
-No component should take ownership of another component's job.
-
-### 5. Extensibility
-
-Future interfaces should reuse the existing BootPrep engine rather than duplicate its functionality.
-
-Possible future interfaces include:
-
-- A graphical frontend.
-- Recovery tools.
-- Distribution integration.
-- Other snapshot-management utilities.
-
-All should invoke the same engine interface.
-
----
-
-## Version 1.1.0
-
-BootPrep Version 1.1.0 adds the `bootprep-btrfs` orchestrator while preserving the existing BootPrep preparation engine and its responsibility.
-
-`bootprep-btrfs` provides Btrfs-specific workflows such as `activate`, while `bootprep prepare` remains responsible only for preparing an already-selected writable snapshot and its boot environment for the next boot.
-
-The Snapper plugin and Btrfs orchestrator therefore provide separate paths into the same BootPrep preparation engine without duplicating its functionality.
-
-That separation of responsibilities continues to define the BootPrep architecture.
-
----
-
-## License
-
-BootPrep is licensed under the GNU General Public License v3.0 or later (`GPL-3.0-or-later`).
+This reduces persistent integration, preserves distribution files, and supports EFI layouts in which the GRUB prefix is stored either in a redirect file or in the EFI executable itself.

@@ -52,7 +52,7 @@ Although `bootprep-btrfs` is described as a Btrfs orchestrator, its implementati
 
 It watches only for BootPrep-defined workflow arguments.
 
-In Version 1.1.0, the only defined workflow is:
+In Version 2.0.0, the only defined workflow is:
 
 ```text
 activate
@@ -263,8 +263,7 @@ This keeps `bootprep-btrfs` from becoming a second Btrfs command parser.
 - Preparing an already-selected writable snapshot and its boot environment.
 - Performing Snapshot Store Reconciliation when required.
 - Regenerating GRUB configuration inside the selected snapshot.
-- Updating the EFI GRUB configuration for the selected snapshot.
-- Recording the pending BootPrep transaction state.
+- Refreshing the validated EFI GRUB loader while preserving the existing firmware boot entry and boot order.
 - Leaving the selected snapshot ready for the next boot.
 
 The orchestrator does not duplicate BootPrep's preparation engine.
@@ -273,7 +272,7 @@ The orchestrator does not duplicate BootPrep's preparation engine.
 
 ## Relationship to the Snapper Plugin
 
-BootPrep Version 1.1.0 provides two separate integration paths into the same preparation engine.
+BootPrep Version 2.0.0 provides two separate integration paths into the same preparation engine.
 
 ### Snapper rollback
 
@@ -392,7 +391,7 @@ That design keeps the command useful as a normal Btrfs entry point while providi
 | Type | Btrfs orchestrator |
 | Implementation | Thin wrapper around `/usr/bin/btrfs` |
 | Installed location | `/usr/sbin/bootprep-btrfs` |
-| Version 1.1.0 workflow | `activate` |
+| Version 2.0.0 workflow | `activate` |
 | Activate interface | `bootprep-btrfs activate <snapshot-number> [mount-point]` |
 | Default mount point | `/` |
 | Native Btrfs commands | Passed directly to `/usr/bin/btrfs` |

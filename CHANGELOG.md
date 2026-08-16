@@ -10,6 +10,47 @@ The project follows Semantic Versioning.
 
 ---
 
+## [2.0.0] - 2026-08-16
+
+### Changed
+
+- Replaced the patched `10_linux`, runtime-state, and manual EFI redirect architecture with direct preparation inside the selected writable snapshot.
+- BootPrep now mounts and enters the selected snapshot, runs `grub-mkconfig -o /boot/grub/grub.cfg`, and refreshes the existing EFI loader while preserving the system's firmware boot entry and boot order.
+- Snapshot discovery now derives the base root subvolume instead of requiring it to be named `@`, validates the selected snapshot directly, and mounts it by numeric Btrfs subvolume ID so discovery is independent of the running root's path-reporting context.
+- EFI bootloader discovery now validates existing GRUB or shim loader directories, compares OS identities case-insensitively, preserves the existing bootloader ID spelling, and refuses ambiguous targets.
+- The installer is now limited to fresh installations and redirects complete or partial existing installations to the upgrader.
+- The upgrader now supports clean future upgrades across supported distributions and retains the permanent Debian `dpkg-divert` migration path for Version 1 installations. Unexpected legacy artifacts on systems without `dpkg-divert` cause a safe stop.
+
+### Removed
+
+- Removed the BootPrep patch and diversion of `/etc/grub.d/10_linux` from the active architecture.
+- Removed `BOOTPREP_BTRFS_SNAPSHOT_BOOTING` from `/etc/default/grub`.
+- Removed `/usr/lib/bootprep/bootprep-runtime.sh`.
+- Removed `/var/lib/bootprep/next-boot` and pending boot transaction state.
+- Removed manual backup, retention, and rewriting of EFI-side `grub.cfg` files.
+
+### Migration
+
+- Version 1 installations are migrated through `bootprep-upgrade.sh`.
+- The upgrader verifies and restores the diverted upstream `10_linux`, removes the diversion, archives the patched v1 script, removes the obsolete GRUB setting, and archives legacy runtime artifacts.
+- All removed v1 files are preserved in a timestamped migration archive beneath `/var/lib/bootprep/backups`.
+- The v1 migration path remains available for users upgrading directly from v1 to later releases.
+
+### Compatibility
+
+- Retained UEFI-only support with the EFI System Partition mounted at `/boot/efi`.
+- Added support for distributions that embed the GRUB prefix in the EFI executable instead of using an EFI-side `grub.cfg`.
+- Validated fresh installation, clean upgrades, migration from BootPrep 1.x to 2.0.0 on Debian, explicit snapshot activation, native Snapper rollback, and reboot testing on Debian, Kubuntu, and EndeavourOS.
+
+### Safety
+
+- Added writable snapshot verification.
+- Added early Btrfs, UEFI, ESP, GRUB tool, platform-target, and bootloader-ID validation.
+- GRUB installation deliberately uses `--no-nvram` to preserve existing firmware boot entries and boot order while refreshing the loader files on the EFI System Partition.
+- Cleanup no longer removes temporary directories while mounts remain active.
+
+---
+
 ## [1.1.0] - 2026-08-09
 
 ### Added
