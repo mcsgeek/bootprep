@@ -19,7 +19,7 @@ The project follows Semantic Versioning.
 - Snapshot discovery now derives the base root subvolume instead of requiring it to be named `@`, validates the selected snapshot directly, and mounts it by numeric Btrfs subvolume ID so discovery is independent of the running root's path-reporting context.
 - EFI bootloader discovery now validates existing GRUB or shim loader directories, compares OS identities case-insensitively, preserves the existing bootloader ID spelling, and refuses ambiguous targets.
 - The installer is now limited to fresh installations and redirects complete or partial existing installations to the upgrader.
-- The upgrader now supports clean future upgrades across supported distributions and retains the permanent Debian `dpkg-divert` migration path for Version 1 installations. Unexpected legacy artifacts on systems without `dpkg-divert` cause a safe stop.
+- The upgrader now supports clean upgrades across supported distributions and migration from BootPrep 1.x.
 
 ### Removed
 
