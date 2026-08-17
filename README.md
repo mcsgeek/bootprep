@@ -125,11 +125,7 @@ When upgrading an existing Debian system from BootPrep 1.x, the upgrader first p
 - Verifies that no active v1 integration remains.
 - Installs and verifies Version 2.0.0.
 
-The v1 migration path remains part of the upgrader so users can upgrade from v1 even when the current release is several major versions newer.
-
-If legacy artifacts are found on a system without the `dpkg-divert` mechanism used by Version 1, the upgrader stops without making changes.
-
-Keep the migration archive until the upgraded system has completed successful activation, rollback, and reboot testing.
+We recommend keeping the migration archive until the upgraded system has successfully completed activation, rollback, and reboot.
 
 ---
 
