@@ -458,16 +458,22 @@ There is no v2 runtime library or next-boot state file.
 
 ## Version 2.0.0 Architecture
 
-Version 2.0.0 removes the original architecture built around:
+BootPrep 2.0.0 uses a direct, transactional architecture:
 
-- A diverted and patched `/etc/grub.d/10_linux`.
-- `BOOTPREP_BTRFS_SNAPSHOT_BOOTING` in `/etc/default/grub`.
-- `/usr/lib/bootprep/bootprep-runtime.sh`.
-- `/var/lib/bootprep/next-boot`.
-- Manual EFI redirect backup and patching.
+- Validates the selected snapshot and makes it writable when necessary.
+- Reconciles the snapshot-store mounts required after boot.
+- Mounts the snapshot as a complete system root.
+- Mounts the EFI System Partition and required virtual filesystems within it.
+- Enters the prepared snapshot environment.
+- Generates `/boot/grub/grub.cfg` using the snapshot's own GRUB tooling.
+- Refreshes the existing EFI loader without modifying firmware boot entries or boot order.
+- Verifies the result and removes all temporary mounts.
 
-The replacement architecture is direct and transactional:
+This architecture:
 
-> **Mount the selected writable snapshot, enter it, let its GRUB tooling generate configuration, and safely refresh the existing EFI loader without changing the system's firmware boot configuration.**
+- Preserves distribution-owned GRUB files.
+- Requires no persistent runtime integration or next-boot state.
+- Supports EFI layouts where the GRUB prefix is stored either in a redirect file or in the EFI executable itself.
+- Keeps activation and rollback preparation within one controlled transaction.
 
-This reduces persistent integration, preserves distribution files, and supports EFI layouts in which the GRUB prefix is stored either in a redirect file or in the EFI executable itself.
+It replaces the Version 1 architecture based on a diverted `10_linux`, a custom GRUB setting, runtime state files, and manual EFI redirect patching.
