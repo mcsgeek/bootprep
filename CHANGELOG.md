@@ -40,7 +40,7 @@ The project follows Semantic Versioning.
 
 - Retained UEFI-only support with the EFI System Partition mounted at `/boot/efi`.
 - Added support for distributions that embed the GRUB prefix in the EFI executable instead of using an EFI-side `grub.cfg`.
-- Validated fresh installation, clean upgrades, migration from BootPrep 1.x to 2.0.0 on Debian, explicit snapshot activation, native Snapper rollback, and reboot testing on Debian, Kubuntu, and EndeavourOS.
+- Across Debian, Kubuntu, and GRUB-based installations of EndeavourOS and CatchyOS, validated fresh installation, clean upgrades, explicit snapshot activation, native Snapper rollback, and reboot testing, with migration from BootPrep 1.x to 2.0.0 validated on Debian.
 
 ### Safety
 
