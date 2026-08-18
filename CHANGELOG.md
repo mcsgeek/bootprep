@@ -10,6 +10,14 @@ The project follows Semantic Versioning.
 
 ---
 
+## [2.0.1] - 2026-08-18
+
+### Compatibility
+
+- Improved installer compatibility with alternate GRUB-on-UEFI layouts.
+
+---
+
 ## [2.0.0] - 2026-08-16
 
 ### Changed

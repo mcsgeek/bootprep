@@ -197,7 +197,7 @@ The command runs through a sanitized environment with only the required home, pa
 
 BootPrep does not generate `grub.cfg` itself. It delegates configuration generation to the distribution's installed GRUB tooling and verifies that the resulting file exists and is nonempty.
 
-Version 2.0.0 does not patch `10_linux`. The selected snapshot is the chroot root, allowing ordinary GRUB scripts to inspect and configure that environment directly.
+Version 2.x does not patch `10_linux`. The selected snapshot is the chroot root, allowing ordinary GRUB scripts to inspect and configure that environment directly.
 
 ---
 
@@ -456,9 +456,9 @@ There is no v2 runtime library or next-boot state file.
 
 ---
 
-## Version 2.0.0 Architecture
+## Version 2.0.1 Architecture
 
-BootPrep 2.0.0 uses a direct, transactional architecture:
+BootPrep 2.0.1 uses a direct, transactional architecture:
 
 - Validates the selected snapshot and makes it writable when necessary.
 - Reconciles the snapshot-store mounts required after boot.

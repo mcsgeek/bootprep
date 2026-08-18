@@ -214,7 +214,7 @@ No separate plugin installation procedure is required.
 
 ## Relationship to `bootprep-btrfs`
 
-BootPrep 2.0.0 provides two distinct paths into the same preparation
+BootPrep 2.x provides two distinct paths into the same preparation
 engine.
 
 Snapper rollback:

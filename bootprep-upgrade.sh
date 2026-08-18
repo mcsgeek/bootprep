@@ -2,10 +2,10 @@
 #
 # BootPrep Upgrade
 #
-# Migrates a legacy BootPrep installation to version 2.0.0, removes the old
+# Migrates a legacy BootPrep installation to version 2.0.1, removes the old
 # GRUB patch/runtime architecture, and runs the version 2 installer.
 #
-# Version: 2.0.0
+# Version: 2.0.1
 # License: GPL-3.0-or-later
 #
 # Copyright (C) 2026 Scott McClain
@@ -311,12 +311,12 @@ verify_legacy_cleanup() {
 }
 
 run_v2_installer() {
-    section "Install BootPrep 2.0.0"
+    section "Install BootPrep 2.0.1"
     BOOTPREP_INTERNAL_UPGRADE=true /bin/bash "$INSTALLER_SOURCE"
 }
 
 main() {
-    section "BootPrep 2.0.0 Upgrade"
+    section "BootPrep 2.0.1 Upgrade"
 
     validate
 
@@ -334,7 +334,7 @@ main() {
     run_v2_installer
 
     section "Upgrade Complete"
-    ok "BootPrep was upgraded to version 2.0.0."
+    ok "BootPrep was upgraded to version 2.0.1."
     if [[ -n "$MIGRATION_DIR" ]]; then
         printf 'Legacy archive : %s\n' "$MIGRATION_DIR"
     fi

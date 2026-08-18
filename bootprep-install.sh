@@ -2,10 +2,10 @@
 #
 # BootPrep Installer
 #
-# Installs BootPrep 2.0.0 on a fresh system. Existing and partial installations
+# Installs BootPrep 2.0.1 on a fresh system. Existing and partial installations
 # must be handled by bootprep-upgrade.sh.
 #
-# Version: 2.0.0
+# Version: 2.0.1
 # License: GPL-3.0-or-later
 #
 # Copyright (C) 2026 Scott McClain
@@ -58,6 +58,30 @@ validate_environment() {
         bash -n "$file" || die "Shell syntax validation failed: $file"
     done
     ok "BootPrep prerequisites verified."
+}
+
+prepare_grub_layout() {
+    section "GRUB Layout"
+
+    if [[ -f /boot/grub/grub.cfg ]]; then
+        ok "GRUB layout verified."
+        return
+    fi
+
+    if path_exists /boot/grub; then
+        die "/boot/grub exists but does not provide grub.cfg."
+    fi
+
+    [[ -f /boot/efi/grub/grub.cfg ]] \
+        || die "/boot/grub/grub.cfg was not found."
+
+    ln -s efi/grub /boot/grub
+    if [[ ! -L /boot/grub || ! /boot/grub -ef /boot/efi/grub || ! -f /boot/grub/grub.cfg ]]; then
+        rm -f /boot/grub
+        die "GRUB layout reconciliation failed."
+    fi
+
+    ok "GRUB layout reconciled and verified."
 }
 
 path_exists() {
@@ -213,15 +237,16 @@ install_components() {
 }
 
 main() {
-    section "BootPrep 2.0.0"
+    section "BootPrep 2.0.1"
     require_root
     require_fresh_installation
     validate_environment
+    prepare_grub_layout
     discover_btrfs_layout
     reconcile_snapshot_store_mounts
     install_components
     section "Result"
-    ok "BootPrep 2.0.0 installed successfully."
+    ok "BootPrep 2.0.1 installed successfully."
 }
 
 main "$@"

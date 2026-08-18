@@ -52,7 +52,7 @@ Although `bootprep-btrfs` is described as a Btrfs orchestrator, its implementati
 
 It watches only for BootPrep-defined workflow arguments.
 
-In Version 2.0.0, the only defined workflow is:
+In Version 2.x, the only defined workflow is:
 
 ```text
 activate
@@ -272,7 +272,7 @@ The orchestrator does not duplicate BootPrep's preparation engine.
 
 ## Relationship to the Snapper Plugin
 
-BootPrep Version 2.0.0 provides two separate integration paths into the same preparation engine.
+BootPrep Version 2.x provides two separate integration paths into the same preparation engine.
 
 ### Snapper rollback
 
@@ -391,7 +391,7 @@ That design keeps the command useful as a normal Btrfs entry point while providi
 | Type | Btrfs orchestrator |
 | Implementation | Thin wrapper around `/usr/bin/btrfs` |
 | Installed location | `/usr/sbin/bootprep-btrfs` |
-| Version 2.0.0 workflow | `activate` |
+| Version 2.x workflow | `activate` |
 | Activate interface | `bootprep-btrfs activate <snapshot-number> [mount-point]` |
 | Default mount point | `/` |
 | Native Btrfs commands | Passed directly to `/usr/bin/btrfs` |

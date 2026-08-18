@@ -14,7 +14,7 @@ BootPrep began as a personal effort to expand the native Btrfs and Snapper exper
 
 What started as a proof of concept evolved into BootPrep—a dedicated boot preparation layer that works alongside the tools already provided by the distribution instead of replacing them.
 
-Version 2.0.0 replaces the original patched-GRUB architecture with a direct preparation transaction performed from inside the selected writable snapshot.
+Version 2.x replaces the original patched-GRUB architecture with a direct preparation transaction performed from inside the selected writable snapshot.
 
 ## Business as Usual
 
@@ -38,7 +38,7 @@ Until then...
 
 ## Compatibility
 
-BootPrep 2.0.0 is designed for systems with:
+BootPrep 2.x is designed for systems with:
 
 - A Btrfs root filesystem using a nested Snapper layout.
 - Root snapshots stored beneath `<root-subvolume>/.snapshots/<number>/snapshot`.
@@ -48,9 +48,9 @@ BootPrep 2.0.0 is designed for systems with:
 
 The root subvolume does not have to be named `@`. BootPrep derives the base root subvolume from the running system and normalizes it when the system is already booted from a writable snapshot.
 
-BootPrep is compatible with Debian, Ubuntu, EndeavourOS, CachyOS, and many related derivatives that meet these requirements. Version 2.0.0 has been exercised directly on Debian, Kubuntu, and GRUB-based installations of EndeavourOS and CachyOS. Distribution packaging and Snapper integration still vary, so testing with a verified recovery path is recommended before deployment on another distribution.
+BootPrep is compatible with Debian, Ubuntu, EndeavourOS, CachyOS, and many related derivatives that meet these requirements. Version 2.x has been exercised directly on Debian, Kubuntu, and GRUB-based installations of EndeavourOS and CachyOS. Distribution packaging and Snapper integration still vary, so testing with a verified recovery path is recommended before deployment on another distribution.
 
-Legacy BIOS boot is not supported in Version 2.0.0.
+Legacy BIOS boot is not supported in Version 2.x.
 
 ---
 
@@ -80,7 +80,7 @@ The repository contains five executable components:
 | `bootprep-install.sh` | Fresh-install utility | Run from the repository |
 | `bootprep-upgrade.sh` | Existing-install upgrade and v1 migration utility | Run from the repository |
 
-Version 2.0.0 does not install a GRUB runtime library, maintain next-boot state, patch `/etc/grub.d/10_linux`, or add a setting to `/etc/default/grub`.
+Version 2.x does not install a GRUB runtime library, maintain next-boot state, patch `/etc/grub.d/10_linux`, or add a setting to `/etc/default/grub`.
 
 ## Fresh Installation
 
@@ -113,7 +113,7 @@ sudo ./bootprep-upgrade.sh
 
 For a clean v2 or later installation, the upgrader verifies the environment and runs the current installer through its controlled internal upgrade path. This path does not require Debian's `dpkg-divert` and is available across supported distributions.
 
-When upgrading an existing Debian system from BootPrep 1.x, the upgrader first performs a complete migration and then installs BootPrep 2.0.0:
+When upgrading an existing Debian system from BootPrep 1.x, the upgrader first performs a complete migration and then installs BootPrep 2.0.1:
 
 - Creates a timestamped recovery archive beneath `/var/lib/bootprep/backups`.
 - Validates BootPrep's saved and diverted upstream `10_linux` files.
@@ -123,7 +123,7 @@ When upgrading an existing Debian system from BootPrep 1.x, the upgrader first p
 - Backs up `/etc/default/grub` and removes `BOOTPREP_BTRFS_SNAPSHOT_BOOTING`.
 - Archives and removes the obsolete runtime, state, and configuration files.
 - Verifies that no active v1 integration remains.
-- Installs and verifies Version 2.0.0.
+- Installs and verifies Version 2.0.1.
 
 We recommend keeping the migration archive until the upgraded system has successfully completed activation, rollback, and reboot.
 
@@ -247,9 +247,9 @@ BootPrep is guided by a few simple principles:
 
 ---
 
-## Version 2.0.0
+## Version 2.0.1
 
-Version 2.0.0 replaces the v1 runtime-state and patched-`10_linux` design with direct GRUB preparation inside the selected writable snapshot.
+Version 2.0.1 replaces the v1 runtime-state and patched-`10_linux` design with direct GRUB preparation inside the selected writable snapshot.
 
 The new architecture:
 
@@ -260,7 +260,7 @@ The new architecture:
 - Supports both Debian's EFI redirect file and distributions that embed the GRUB prefix in the EFI executable.
 - Provides a verified, recoverable migration from Version 1.
 
-Across Debian, Kubuntu, and GRUB-based installations of EndeavourOS and CachyOS, Version 2.0.0 has been tested through fresh installation, v1 migration where applicable, clean upgrade, explicit activation, native Snapper rollback, and reboot.
+Across Debian, Kubuntu, and GRUB-based installations of EndeavourOS and CachyOS, Version 2.0.1 has been tested through fresh installation, v1 migration where applicable, clean upgrade, explicit activation, native Snapper rollback, and reboot.
 
 ---
 
@@ -287,7 +287,7 @@ The original proof of concept was inspired by two community articles:
 - **Reliable Btrfs snapshots with Snapper on Debian and Ubuntu** by Hossein Moslehi
 - **Install Fedora with Snapshot and Rollback Support** by Madhu Desai
 
-The Debian article inspired the original patched-`10_linux` proof of concept. The Fedora article demonstrated shell scripting and installation techniques that influenced the early implementation. Version 2.0.0 moves beyond that original architecture while preserving the project's core purpose and separation of responsibilities.
+The Debian article inspired the original patched-`10_linux` proof of concept. The Fedora article demonstrated shell scripting and installation techniques that influenced the early implementation. Version 2.0.1 moves beyond that original architecture while preserving the project's core purpose and separation of responsibilities.
 
 ## License
 
