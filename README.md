@@ -149,6 +149,10 @@ sudo bootprep-btrfs activate <snapshot-number> [mount-point]
 
 The mount point defaults to `/`. The workflow makes the selected snapshot writable, sets it as the Btrfs default subvolume, and delegates final boot preparation to BootPrep.
 
+![Debian booted from an activated writable Snapper snapshot](images/bootprep-activate-snapshot.png)
+
+*Debian booted directly into an existing writable Snapper snapshot using `bootprep-btrfs activate`, without performing a Snapper rollback.*
+
 All commands other than `activate` are passed directly to `/usr/bin/btrfs`.
 
 ### Manual preparation
