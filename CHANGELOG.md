@@ -12,9 +12,13 @@ The project follows Semantic Versioning.
 
 ## [2.0.1] - 2026-08-18
 
+### Safety
+
+- The installer now verifies the required GRUB configuration layout before installing BootPrep and stops safely when `/boot/grub/grub.cfg` is unavailable, preventing a successful installation that would fail later during boot preparation.
+
 ### Compatibility
 
-- Improved installer compatibility with alternate GRUB-on-UEFI layouts.
+- When the conventional GRUB configuration path is absent but `/boot/efi/grub/grub.cfg` is available, the installer now creates and verifies a compatibility symlink at `/boot/grub`.
 
 ---
 
