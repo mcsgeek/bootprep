@@ -18,7 +18,7 @@ The project follows Semantic Versioning.
 
 ### Compatibility
 
-- When the conventional GRUB configuration path is absent but `/boot/efi/grub/grub.cfg` is available, the installer now creates and verifies a compatibility symlink at `/boot/grub`.
+- For an uncommon GRUB-on-UEFI layout where `/boot/grub` is absent but `/boot/efi/grub/grub.cfg` exists, the installer now creates and verifies a compatibility symlink at `/boot/grub`.
 
 ---
 
