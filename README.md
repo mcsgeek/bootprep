@@ -4,9 +4,9 @@
 
 BootPrep is the activation layer for GRUB-based Linux systems using a nested Btrfs snapshot layout.
 
-It prepares the boot environment so a selected writable Snapper snapshot can become the next bootable system while preserving the existing filesystem layout.
+On many Debian- and Arch-based distributions, Snapper can create rollback snapshots, but the system does not provide openSUSE-style integration to prepare the rollback result as the next writable root. Their common nested Btrfs snapshot layouts require additional boot preparation that Snapper alone does not perform.
 
-Rather than replacing Snapper, changing GRUB's normal behavior, or introducing another rollback framework, BootPrep integrates with the existing Btrfs, Snapper, GRUB, and UEFI infrastructure. Nothing changes until a writable snapshot is intentionally selected for activation or produced by a rollback.
+BootPrep fills that gap. It provides a Snapper rollback plugin that prepares the resulting writable snapshot for the next boot, plus a direct activation workflow for booting an existing snapshot without performing a rollback. It integrates with the system's existing Btrfs, Snapper, GRUB, and UEFI configuration without requiring a filesystem redesign.
 
 ## Background
 
