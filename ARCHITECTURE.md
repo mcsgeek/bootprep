@@ -254,7 +254,7 @@ On Debian, the prefix is commonly represented by an EFI-side redirect file:
 set prefix=($root)'/@/.snapshots/8/snapshot/boot/grub'
 ```
 
-Other distributions, including tested GRUB-based installations of EndeavourOS and CachyOS, may embed the prefix directly in the EFI executable and have no EFI-side `grub.cfg`. Both layouts are handled by `grub-install`; BootPrep does not manually interpret or rewrite either representation.
+Other distributions, including tested GRUB-based installations of EndeavourOS, CachyOS, and Manjaro, may embed the prefix directly in the EFI executable and have no EFI-side `grub.cfg`. Both layouts are handled by `grub-install`; BootPrep does not manually interpret or rewrite either representation.
 
 ---
 
