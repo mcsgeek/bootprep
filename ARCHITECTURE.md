@@ -248,13 +248,15 @@ grub-install \
 
 This operation performs necessary per-snapshot work. The GRUB prefix must resolve into the newly selected nested snapshot.
 
-On Debian, the prefix is commonly represented by an EFI-side redirect file:
+The GRUB prefix may be represented by an EFI-side redirect file. This configuration has been observed on tested Debian and Ubuntu installations:
 
 ```text
 set prefix=($root)'/@/.snapshots/8/snapshot/boot/grub'
 ```
 
-Other distributions, including tested GRUB-based installations of EndeavourOS, CachyOS, and Manjaro, may embed the prefix directly in the EFI executable and have no EFI-side `grub.cfg`. Both layouts are handled by `grub-install`; BootPrep does not manually interpret or rewrite either representation.
+Other tested configurations embed the prefix directly in the EFI executable and have no EFI-side `grub.cfg`. This has been observed on EndeavourOS, CachyOS, and Manjaro installations.
+
+Both layouts are handled by `grub-install`; BootPrep does not manually interpret or rewrite either representation.
 
 ---
 

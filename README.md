@@ -48,7 +48,7 @@ BootPrep 2.x is designed for systems with:
 
 The root subvolume does not have to be named `@`. BootPrep derives the base root subvolume from the running system and normalizes it when the system is already booted from a writable snapshot.
 
-BootPrep is compatible with Debian, Ubuntu, EndeavourOS, CachyOS, Manjaro, and many related derivatives that meet these requirements. Version 2.x has been exercised directly on Debian, Kubuntu, and GRUB-based installations of EndeavourOS, CachyOS, and Manjaro. Distribution packaging and Snapper integration still vary, so testing with a verified recovery path is recommended before deployment on another distribution.
+BootPrep is compatible with Debian, Ubuntu, EndeavourOS, CachyOS, Manjaro, and many related derivatives that meet these requirements. Version 2.x has been exercised directly on Debian, Ubuntu, Kubuntu, and GRUB-based installations of EndeavourOS, CachyOS, and Manjaro. Distribution packaging and Snapper integration still vary, so testing with a verified recovery path is recommended before deployment on another distribution.
 
 Legacy BIOS boot is not supported in Version 2.x.
 
@@ -264,7 +264,7 @@ The new architecture:
 - Supports both Debian's EFI redirect file and distributions that embed the GRUB prefix in the EFI executable.
 - Provides a verified, recoverable migration from Version 1.
 
-Across Debian, Kubuntu, and GRUB-based installations of EndeavourOS, CachyOS, and Manjaro, Version 2.0.1 has been tested through fresh installation, v1 migration where applicable, clean upgrade, explicit activation, native Snapper rollback, and reboot.
+Across Debian, Ubuntu, Kubuntu, and GRUB-based installations of EndeavourOS, CachyOS, and Manjaro, Version 2.0.1 has been tested through fresh installation, v1 migration where applicable, clean upgrade, explicit activation, native Snapper rollback, and reboot.
 
 ---
 
