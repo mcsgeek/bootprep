@@ -1,6 +1,6 @@
 # BootPrep
 
-> **Business as usual... until you need it.**
+> **Install Linux normally. Extend it with focused tools.**
 
 BootPrep is the activation layer for GRUB-based Linux systems using a nested Btrfs snapshot layout.
 
@@ -16,7 +16,11 @@ What started as a proof of concept evolved into BootPrep—a dedicated boot prep
 
 Version 2.x replaces the original patched-GRUB architecture with a direct preparation transaction performed from inside the selected writable snapshot.
 
-## Business as Usual
+## Why This Approach?
+
+BootPrep is part of a simple approach: install the distribution normally, then use small, focused tools to build a reliable and repeatable Btrfs and Snapper environment.
+
+There is no need to redesign the filesystem during installation or replace the distribution's normal installation process. BootPrep works with the existing Btrfs, Snapper, GRUB, and UEFI configuration, while companion utilities can add other capabilities independently as needed.
 
 Installing BootPrep does not alter the active boot configuration.
 
