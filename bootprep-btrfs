@@ -4,13 +4,22 @@
 #
 # A btrfs orchestrator
 #
-# Version: 2.0.1
+# Version: 2.1.0
 # License: GPL-3.0-or-later
 #
 # Copyright (C) 2026 Scott McClain
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 set -euo pipefail
+
+# Wrap once so nested installer/engine calls share the same bounded run log.
+if [[ $EUID -eq 0 && "${BOOTPREP_LOG_ACTIVE:-}" != 1 && "${1:-}" == activate ]]; then
+    command -v python3 >/dev/null 2>&1 || { echo "Please install Python 3 for BootPrep logging." >&2; exit 1; }
+    BOOTPREP_LOG_HELPER="/usr/lib/bootprep/bootprep-log.py"
+    [[ -f "$BOOTPREP_LOG_HELPER" ]] || { echo "Missing BootPrep logging helper: $BOOTPREP_LOG_HELPER" >&2; exit 1; }
+    exec python3 "$BOOTPREP_LOG_HELPER" /bin/bash "${BASH_SOURCE[0]}" "$@"
+fi
+
 
 readonly BTRFS="/usr/bin/btrfs"
 readonly BOOTPREP="/usr/sbin/bootprep"

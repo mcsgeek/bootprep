@@ -49,10 +49,11 @@ BootPrep 2.x is designed for systems with:
 - GRUB with `grub-mkconfig` and `grub-install` available inside the selected snapshot.
 - UEFI boot with the EFI System Partition mounted at `/boot/efi`.
 - An existing, unambiguous GRUB or shim EFI loader directory.
+- Python 3.9 or newer for bounded operation logging.
 
 The root subvolume does not have to be named `@`. BootPrep derives the base root subvolume from the running system and normalizes it when the system is already booted from a writable snapshot.
 
-BootPrep is compatible with Debian, Ubuntu, EndeavourOS, CachyOS, Manjaro, and many related derivatives that meet these requirements. Version 2.x has been exercised directly on Debian, Ubuntu, Kubuntu, and GRUB-based installations of EndeavourOS, CachyOS, and Manjaro. Distribution packaging and Snapper integration still vary, so testing with a verified recovery path is recommended before deployment on another distribution.
+BootPrep is compatible with Debian- and Ubuntu-based systems, Arch-based systems, and related derivatives that meet these requirements. Version 2.1.0 was exercised directly on Debian, Kubuntu, TUXEDO OS, Manjaro, CachyOS, and EndeavourOS. Distribution packaging and Snapper integration still vary, so testing with a verified recovery path is recommended before deployment on another distribution.
 
 Legacy BIOS boot is not supported in Version 2.x.
 
@@ -74,7 +75,7 @@ Snapper continues to manage snapshots, Btrfs continues to manage subvolumes, and
 
 ## Components
 
-The repository contains five executable components:
+The repository contains five entry points and two shared runtime helpers:
 
 | Component | Responsibility | Installed location |
 | --- | --- | --- |
@@ -83,6 +84,8 @@ The repository contains five executable components:
 | `99_bootprep` | Snapper rollback plugin | `/usr/lib/snapper/plugins/99_bootprep` |
 | `bootprep-install.sh` | Fresh-install utility | Run from the repository |
 | `bootprep-upgrade.sh` | Existing-install upgrade and v1 migration utility | Run from the repository |
+| `bootprep-log.py` | Bounded logging and single-operation locking | `/usr/lib/bootprep/bootprep-log.py` |
+| `bootprep-reconcile.sh` | Independent-subvolume discovery and `fstab` reconciliation | `/usr/lib/bootprep/bootprep-reconcile.sh` |
 
 Version 2.x does not install a GRUB runtime library, maintain next-boot state, patch `/etc/grub.d/10_linux`, or add a setting to `/etc/default/grub`.
 
@@ -95,15 +98,15 @@ chmod +x bootprep bootprep-btrfs bootprep-install.sh bootprep-upgrade.sh 99_boot
 sudo ./bootprep-install.sh
 ```
 
-The installer is intentionally limited to fresh installations. If any complete or partial BootPrep installation is detected, it stops and directs the user to `bootprep-upgrade.sh`.
+The installer is intentionally limited to fresh installations. A healthy existing installation returns success without changing files and directs the user to `bootprep-upgrade.sh` for updates. A partial or legacy installation stops with the appropriate upgrade guidance.
 
 For a fresh system, the installer:
 
 - Verifies the Btrfs and UEFI environment.
 - Verifies required GRUB utilities and source components.
 - Discovers the active root and optional home subvolumes.
-- Reconciles discovered snapshot-store entries in `/etc/fstab`.
-- Installs and verifies the engine, Btrfs orchestrator, and Snapper plugin.
+- Reconciles discovered independent-subvolume entries in `/etc/fstab`.
+- Installs and verifies the engine, Btrfs orchestrator, Snapper plugin, logging helper, and reconciliation helper.
 
 The installer does not regenerate GRUB or change the currently selected root.
 
@@ -117,7 +120,7 @@ sudo ./bootprep-upgrade.sh
 
 For a clean v2 or later installation, the upgrader verifies the environment and runs the current installer through its controlled internal upgrade path. This path does not require Debian's `dpkg-divert` and is available across supported distributions.
 
-When upgrading an existing Debian system from BootPrep 1.x, the upgrader first performs a complete migration and then installs BootPrep 2.0.1:
+When upgrading an existing Debian system from BootPrep 1.x, the upgrader first performs a complete migration and then installs BootPrep 2.1.0:
 
 - Creates a timestamped recovery archive beneath `/var/lib/bootprep/backups`.
 - Validates BootPrep's saved and diverted upstream `10_linux` files.
@@ -127,7 +130,7 @@ When upgrading an existing Debian system from BootPrep 1.x, the upgrader first p
 - Backs up `/etc/default/grub` and removes `BOOTPREP_BTRFS_SNAPSHOT_BOOTING`.
 - Archives and removes the obsolete runtime, state, and configuration files.
 - Verifies that no active v1 integration remains.
-- Installs and verifies Version 2.0.1.
+- Installs and verifies Version 2.1.0.
 
 We recommend keeping the migration archive until the upgraded system has successfully completed activation, rollback, and reboot.
 
@@ -175,8 +178,8 @@ For a selected writable snapshot, BootPrep:
 
 1. Discovers and validates the exact nested snapshot subvolume.
 2. Mounts the snapshot and verifies that it is writable.
-3. Reconciles required snapshot-store mounts in the snapshot's `fstab`.
-4. Makes `/dev`, `/proc`, `/sys`, `/run`, `/boot`, and `/boot/efi` available as required inside the snapshot.
+3. Reconciles discovered independent-subvolume mounts in the snapshot's `fstab`.
+4. Makes persistent BootPrep state, `/dev`, `/proc`, `/sys`, `/run`, `/boot`, and `/boot/efi` available as required inside the snapshot.
 5. Discovers and validates the existing EFI bootloader ID and GRUB platform target.
 6. Runs `grub-mkconfig -o /boot/grub/grub.cfg` inside the snapshot.
 7. Refreshes GRUB's EFI loader inside the snapshot using the validated target, EFI directory, and bootloader ID while preserving the existing firmware boot entry and boot order.
@@ -184,9 +187,9 @@ For a selected writable snapshot, BootPrep:
 
 The EFI installation may take several seconds. This is normal: GRUB is refreshing the loader so its prefix resolves into the selected snapshot. Debian commonly represents that prefix in an EFI-side `grub.cfg`; other distributions may embed it directly in the EFI executable.
 
-## Snapshot Store Reconciliation
+## Subvolume Reconciliation
 
-BootPrep discovers available root and home snapshot stores and reconciles the corresponding `fstab` entries in the system being prepared.
+BootPrep discovers independent subvolumes belonging to the stable root layout and reconciles the corresponding `fstab` entries in the system being prepared. This includes root and home snapshot stores as well as independently mounted paths such as `/var/lib/bootprep`. Historical snapshot descendants and subvolumes outside the active root or separate-home boundary are excluded.
 
 The policy is intentionally conservative:
 
@@ -194,9 +197,16 @@ The policy is intentionally conservative:
 - Missing entries are created.
 - Incorrect entries are replaced with canonical entries.
 - Duplicate active entries cause a safe abort.
-- Stores that do not exist are not added.
+- Independent subvolumes that do not exist are not added.
+- Existing native mount-unit definitions require review instead of being silently replaced. A narrowly verified, unused vendor compatibility unit for `/var/lib/machines.raw` is handled safely.
 
 BootPrep derives persistent mount options from the running root filesystem while filtering runtime-only subvolume and state options. Before changing `fstab`, it creates a timestamped backup beneath `/var/lib/bootprep/backups`.
+
+When `/var/lib/bootprep` is already an independent mount, BootPrep bind-mounts it into the selected snapshot during preparation. Logs, backups, and state therefore remain available across activation and rollback.
+
+## Run Logs
+
+Install, upgrade, activation, direct preparation, and Snapper rollback operations write a root-only run log beneath `/var/lib/bootprep/logs`. Each log is limited to 1 MiB while retaining the beginning, end, and final status. BootPrep keeps the ten newest logs and permits only one logged operation at a time.
 
 ---
 
@@ -215,6 +225,7 @@ Important safeguards include:
 - Verified `fstab` backups and replacement.
 - Cleanup traps for temporary mounts.
 - Verified v1 migration archives and GRUB restoration.
+- Root-only, size-bounded operation logs with single-operation locking.
 
 BootPrep should still be tested with a known recovery path. Snapshot activation and bootloader preparation are inherently privileged operations.
 
@@ -255,20 +266,34 @@ BootPrep is guided by a few simple principles:
 
 ---
 
-## Version 2.0.1
+## Version 2.1.0
 
-Version 2.0.1 replaces the v1 runtime-state and patched-`10_linux` design with direct GRUB preparation inside the selected writable snapshot.
+Version 2.1.0 extends the direct preparation architecture introduced in Version 2.0 with persistent logging and general independent-subvolume reconciliation.
 
 The new architecture:
 
 - Preserves upstream GRUB scripts.
-- Eliminates persistent BootPrep boot state.
+- Keeps BootPrep logs, backups, and operational state available when `/var/lib/bootprep` is an independent mount.
 - Eliminates manual EFI redirect editing.
 - Uses the distribution's own `grub-mkconfig` and `grub-install` tools.
 - Supports both Debian's EFI redirect file and distributions that embed the GRUB prefix in the EFI executable.
 - Provides a verified, recoverable migration from Version 1.
+- Reconciles independent subvolumes into the system being prepared while preserving valid definitions and refusing ambiguous ones.
+- Records bounded root-only logs for every privileged BootPrep workflow.
+- Treats an already healthy installation as a successful no-change result while identifying partial and legacy installations separately.
 
-Across Debian, Ubuntu, Kubuntu, and GRUB-based installations of EndeavourOS, CachyOS, and Manjaro, Version 2.0.1 has been tested through fresh installation, v1 migration where applicable, clean upgrade, explicit activation, native Snapper rollback, and reboot.
+### Verified test cases
+
+| Distribution | `bootprep-btrfs activate` | Snapper rollback |
+| --- | --- | --- |
+| Debian | Passed | Passed |
+| Kubuntu | Passed | Passed |
+| TUXEDO OS | Passed | Passed |
+| Manjaro | Passed | Passed |
+| CachyOS | Passed | Passed |
+| EndeavourOS | Passed | Passed |
+
+All 12 BootPrep stages passed.
 
 ---
 
@@ -295,7 +320,7 @@ The original proof of concept was inspired by two community articles:
 - **Reliable Btrfs snapshots with Snapper on Debian and Ubuntu** by Hossein Moslehi
 - **Install Fedora with Snapshot and Rollback Support** by Madhu Desai
 
-The Debian article inspired the original patched-`10_linux` proof of concept. The Fedora article demonstrated shell scripting and installation techniques that influenced the early implementation. Version 2.0.1 moves beyond that original architecture while preserving the project's core purpose and separation of responsibilities.
+The Debian article inspired the original patched-`10_linux` proof of concept. The Fedora article demonstrated shell scripting and installation techniques that influenced the early implementation. Version 2.1.0 builds on the direct preparation architecture while preserving the project's core purpose and separation of responsibilities.
 
 ## License
 

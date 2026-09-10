@@ -2,16 +2,25 @@
 #
 # BootPrep Upgrade
 #
-# Migrates a legacy BootPrep installation to version 2.0.1, removes the old
+# Migrates a legacy BootPrep installation to version 2.1.0, removes the old
 # GRUB patch/runtime architecture, and runs the version 2 installer.
 #
-# Version: 2.0.1
+# Version: 2.1.0
 # License: GPL-3.0-or-later
 #
 # Copyright (C) 2026 Scott McClain
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 set -Eeuo pipefail
+
+# Wrap once so nested installer/engine calls share the same bounded run log.
+if [[ $EUID -eq 0 && "${BOOTPREP_LOG_ACTIVE:-}" != 1 ]]; then
+    command -v python3 >/dev/null 2>&1 || { echo "Please install Python 3 for BootPrep logging." >&2; exit 1; }
+    BOOTPREP_LOG_HELPER="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/bootprep-log.py"
+    [[ -f "$BOOTPREP_LOG_HELPER" ]] || { echo "Missing BootPrep logging helper: $BOOTPREP_LOG_HELPER" >&2; exit 1; }
+    exec python3 "$BOOTPREP_LOG_HELPER" /bin/bash "${BASH_SOURCE[0]}" "$@"
+fi
+
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
@@ -60,6 +69,8 @@ installation_is_present() {
     local path
 
     for path in \
+        /usr/lib/bootprep/bootprep-log.py \
+        /usr/lib/bootprep/bootprep-reconcile.sh \
         "$BOOTPREP_DEST" \
         "$BTRFS_DEST" \
         "$SNAPPER_DEST" \
@@ -78,6 +89,8 @@ validate() {
 
     [[ $EUID -eq 0 ]] || die "Please run with sudo."
     require_file "$INSTALLER_SOURCE"
+    require_file "$SCRIPT_DIR/bootprep-reconcile.sh"
+    bash -n "$SCRIPT_DIR/bootprep-reconcile.sh" || die "Subvolume helper contains shell syntax errors."
     require_file "$BOOTPREP_SOURCE"
     require_file "$BTRFS_SOURCE"
     require_file "$SNAPPER_SOURCE"
@@ -311,12 +324,12 @@ verify_legacy_cleanup() {
 }
 
 run_v2_installer() {
-    section "Install BootPrep 2.0.1"
+    section "Install BootPrep 2.1.0"
     BOOTPREP_INTERNAL_UPGRADE=true /bin/bash "$INSTALLER_SOURCE"
 }
 
 main() {
-    section "BootPrep 2.0.1 Upgrade"
+    section "BootPrep 2.1.0 Upgrade"
 
     validate
 
@@ -334,7 +347,7 @@ main() {
     run_v2_installer
 
     section "Upgrade Complete"
-    ok "BootPrep was upgraded to version 2.0.1."
+    ok "BootPrep was upgraded to version 2.1.0."
     if [[ -n "$MIGRATION_DIR" ]]; then
         printf 'Legacy archive : %s\n' "$MIGRATION_DIR"
     fi

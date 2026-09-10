@@ -10,6 +10,31 @@ The project follows Semantic Versioning.
 
 ---
 
+## [2.1.0] - 2026-09-10
+
+### Added
+
+- Added bounded, root-only run logs for installation, upgrade, direct preparation, explicit activation, and Snapper rollback. Logs retain the beginning, end, and final status, are limited to 1 MiB each, and keep the ten newest runs.
+- Added single-operation locking and signal forwarding to the logging wrapper.
+- Added a shared reconciliation helper that discovers independent Btrfs subvolumes and adopts their mounts into the system being prepared.
+- Added automated tests for logging security and retention, subvolume reconciliation, nonstandard root names, mount-definition conflicts, and installer integration.
+
+### Changed
+
+- Expanded `fstab` reconciliation from root and home snapshot stores to independent subvolumes belonging to the stable root layout, including `/var/lib/bootprep`.
+- Bind-mounted an independently mounted `/var/lib/bootprep` into the selected snapshot so logs, backups, and state persist across activation and rollback.
+- Excluded historical snapshots, sibling layouts, and paths beyond a separate-home boundary from automatic adoption.
+- Preserved existing mount definitions and required review for conflicting native mount units, with a narrowly verified compatibility case for an unused vendor `/var/lib/machines.raw` unit.
+- Made a healthy existing installation a successful no-change result and distinguished partial installations from legacy installations.
+- Limited the Snapper plugin trigger to the `rollback-post` callback.
+
+### Compatibility
+
+- Completed both BootPrep regression stages on Debian, Kubuntu, TUXEDO OS, Manjaro, CachyOS, and EndeavourOS: explicit `bootprep-btrfs activate` and native Snapper rollback.
+- Confirmed stable-root normalization for nonstandard root subvolume names, including `@rootfs`.
+
+---
+
 ## [2.0.1] - 2026-08-18
 
 ### Safety

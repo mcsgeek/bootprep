@@ -50,16 +50,16 @@ The plugin is installed at:
 When Snapper invokes the plugin, `99_bootprep` first examines the
 operation supplied in its first argument.
 
-Only operations beginning with:
+Only the post-rollback operation:
 
 ``` text
-rollback
+rollback-post
 ```
 
 are handled. All other Snapper operations exit successfully without
 invoking BootPrep.
 
-For a rollback callback, the plugin verifies that:
+For a `rollback-post` callback, the plugin verifies that:
 
 ``` text
 /usr/sbin/bootprep
@@ -88,6 +88,10 @@ The use of `exec` is intentional. The plugin does not remain as an
 unnecessary intermediate process after its job is complete; BootPrep
 replaces it and becomes responsible for the remainder of the preparation
 transaction.
+
+Version 2.1.0 wraps the complete callback and preparation transaction in
+one bounded, root-only log beneath `/var/lib/bootprep/logs`. Nested
+BootPrep execution shares that log instead of creating a second one.
 
 ------------------------------------------------------------------------
 
@@ -169,7 +173,7 @@ BootPrep preparation engine.
 `99_bootprep` deliberately performs only the validation required for its
 own responsibility.
 
-If the callback is not a rollback operation, the plugin exits
+If the callback is not `rollback-post`, the plugin exits
 successfully and does nothing.
 
 If BootPrep is not installed or is not executable, the plugin reports:
@@ -190,6 +194,10 @@ transfers control to BootPrep.
 
 Any failure after that point belongs to the BootPrep preparation
 transaction and is reported by the BootPrep engine itself.
+
+The log records combined output and the final exit status. BootPrep keeps
+the ten newest logs, limits each one to 1 MiB, and prevents another logged
+operation from running concurrently.
 
 ------------------------------------------------------------------------
 
@@ -278,7 +286,8 @@ interface.
   Component                        `99_bootprep`
   Type                             Snapper rollback plugin
   Installed location               `/usr/lib/snapper/plugins/99_bootprep`
-  Recognized operation             `rollback*`
+  Recognized operation             `rollback-post`
+  Operation log                    `/var/lib/bootprep/logs/bootprep-*.log`
   Snapshot argument                Snapper plugin argument `${5}`
   BootPrep interface               `bootprep prepare <snapshot-number>`
   Non-rollback operations          Ignored

@@ -44,6 +44,8 @@ bootprep prepare
 
 The orchestrator performs the Btrfs work. BootPrep prepares the next boot.
 
+In Version 2.1.0, the complete `activate` workflow is captured in one bounded, root-only log beneath `/var/lib/bootprep/logs`.
+
 ---
 
 ## The Wrapper Design
@@ -261,7 +263,7 @@ This keeps `bootprep-btrfs` from becoming a second Btrfs command parser.
 ### BootPrep is responsible for
 
 - Preparing an already-selected writable snapshot and its boot environment.
-- Performing Snapshot Store Reconciliation when required.
+- Performing independent-subvolume reconciliation when required.
 - Regenerating GRUB configuration inside the selected snapshot.
 - Refreshing the validated EFI GRUB loader while preserving the existing firmware boot entry and boot order.
 - Leaving the selected snapshot ready for the next boot.
@@ -335,6 +337,8 @@ If a Btrfs command fails after validation, `set -e` stops the workflow immediate
 
 If `bootprep prepare` fails, the orchestrator does not hide or replace that failure. BootPrep's own output and exit status describe the preparation failure.
 
+The activation wrapper records combined output and the final exit status in the same bounded log used by the nested BootPrep engine. The ten newest logs are retained, and another logged BootPrep operation cannot begin concurrently.
+
 For commands outside the `activate` workflow, error handling belongs entirely to `/usr/bin/btrfs`.
 
 ---
@@ -391,7 +395,8 @@ That design keeps the command useful as a normal Btrfs entry point while providi
 | Type | Btrfs orchestrator |
 | Implementation | Thin wrapper around `/usr/bin/btrfs` |
 | Installed location | `/usr/sbin/bootprep-btrfs` |
-| Version 2.x workflow | `activate` |
+| Version 2.1.0 workflow | `activate` |
+| Operation log | `/var/lib/bootprep/logs/bootprep-*.log` |
 | Activate interface | `bootprep-btrfs activate <snapshot-number> [mount-point]` |
 | Default mount point | `/` |
 | Native Btrfs commands | Passed directly to `/usr/bin/btrfs` |

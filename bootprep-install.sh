@@ -2,10 +2,10 @@
 #
 # BootPrep Installer
 #
-# Installs BootPrep 2.0.1 on a fresh system. Existing and partial installations
+# Installs BootPrep 2.1.0 on a fresh system. Existing and partial installations
 # must be handled by bootprep-upgrade.sh.
 #
-# Version: 2.0.1
+# Version: 2.1.0
 # License: GPL-3.0-or-later
 #
 # Copyright (C) 2026 Scott McClain
@@ -13,11 +13,24 @@
 
 set -Eeuo pipefail
 
+# Wrap once so nested installer/engine calls share the same bounded run log.
+if [[ $EUID -eq 0 && "${BOOTPREP_LOG_ACTIVE:-}" != 1 ]]; then
+    command -v python3 >/dev/null 2>&1 || { echo "Please install Python 3 for BootPrep logging." >&2; exit 1; }
+    BOOTPREP_LOG_HELPER="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/bootprep-log.py"
+    [[ -f "$BOOTPREP_LOG_HELPER" ]] || { echo "Missing BootPrep logging helper: $BOOTPREP_LOG_HELPER" >&2; exit 1; }
+    exec python3 "$BOOTPREP_LOG_HELPER" /bin/bash "${BASH_SOURCE[0]}" "$@"
+fi
+
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
 readonly FSTAB="/etc/fstab"
 readonly BACKUP_DIR="/var/lib/bootprep/backups"
 readonly BOOTPREP_SOURCE="${SCRIPT_DIR}/bootprep"
+readonly SUBVOLUME_SOURCE="${SCRIPT_DIR}/bootprep-reconcile.sh"
+readonly SUBVOLUME_DEST="/usr/lib/bootprep/bootprep-reconcile.sh"
+readonly LOG_SOURCE="${SCRIPT_DIR}/bootprep-log.py"
+readonly LOG_DEST="/usr/lib/bootprep/bootprep-log.py"
 readonly BTRFS_SOURCE="${SCRIPT_DIR}/bootprep-btrfs"
 readonly SNAPPER_SOURCE="${SCRIPT_DIR}/99_bootprep"
 readonly BOOTPREP_DEST="/usr/sbin/bootprep"
@@ -48,13 +61,13 @@ validate_environment() {
     mountpoint -q /boot/efi || die "/boot/efi is not mounted."
     [[ -d /sys/firmware/efi ]] || die "The system is not booted in UEFI mode."
 
-    for file in "$FSTAB" "$BOOTPREP_SOURCE" "$BTRFS_SOURCE" "$SNAPPER_SOURCE"; do
+    for file in "$LOG_SOURCE" "$FSTAB" "$BOOTPREP_SOURCE" "$BTRFS_SOURCE" "$SNAPPER_SOURCE" "$SUBVOLUME_SOURCE"; do
         require_file "$file"
     done
-    for command in awk bash btrfs findmnt grub-install grub-mkconfig install mountpoint paste sed; do
+    for command in awk bash btrfs findmnt grub-install grub-mkconfig install mountpoint paste sed mount umount systemd-escape cmp sync; do
         require_command "$command"
     done
-    for file in "$BOOTPREP_SOURCE" "$BTRFS_SOURCE" "$SNAPPER_SOURCE"; do
+    for file in "$BOOTPREP_SOURCE" "$BTRFS_SOURCE" "$SNAPPER_SOURCE" "$SUBVOLUME_SOURCE"; do
         bash -n "$file" || die "Shell syntax validation failed: $file"
     done
     ok "BootPrep prerequisites verified."
@@ -104,14 +117,36 @@ require_fresh_installation() {
     esac
 
     local path
+    local present=0
+    local missing=0
+
     for path in \
+        "$LOG_DEST" \
+        "$SUBVOLUME_DEST" \
         "$BOOTPREP_DEST" \
         "$BTRFS_DEST" \
-        "$SNAPPER_DEST" \
-        "$LEGACY_RUNTIME" \
-        "$LEGACY_STATE"; do
+        "$SNAPPER_DEST"; do
         if path_exists "$path"; then
-            die "An existing or partial BootPrep installation was detected. Use bootprep-upgrade.sh."
+            ((present += 1))
+        else
+            ((missing += 1))
+        fi
+    done
+
+    if (( present > 0 && missing == 0 )); then
+        info "BootPrep is already installed."
+        info "Use bootprep-upgrade.sh to update the existing installation."
+        info "No changes were made."
+        exit 0
+    fi
+
+    if (( present > 0 )); then
+        die "A partial BootPrep installation was detected. Use bootprep-upgrade.sh to repair or complete the installation."
+    fi
+
+    for path in "$LEGACY_RUNTIME" "$LEGACY_STATE"; do
+        if path_exists "$path"; then
+            die "Legacy BootPrep files were detected. Use bootprep-upgrade.sh to migrate the existing installation."
         fi
     done
 
@@ -137,96 +172,21 @@ discover_btrfs_layout() {
     ok "Btrfs layout discovered."
 }
 
-discover_snapshot_stores() {
-    local path root_store="${BASE_SUBVOL}/.snapshots" home_store="${BASE_SUBVOL}/home/.snapshots"
-    [[ -n "$HOME_SUBVOL" ]] && home_store="${HOME_SUBVOL}/.snapshots"
-    while IFS= read -r path; do
-        case "$path" in
-            .snapshots|"$root_store") printf '%s\t%s\n' "$root_store" /.snapshots ;;
-            "$home_store") printf '%s\t%s\n' "$home_store" /home/.snapshots ;;
-        esac
-    done < <(btrfs subvolume list / | awk '{ sub(/^.* path /, ""); if ($0 ~ /(^|\/)\.snapshots$/) print }')
-}
-
-snapshot_mount_options() {
-    local options
-    options="$(findmnt -n -o OPTIONS / | tr ',' '\n' | awk '
-        $0 == "rw" || $0 == "ro" { next }
-        $0 ~ /^subvol=/ || $0 ~ /^subvolid=/ || $0 ~ /^space_cache=/ { next }
-        NF { print }
-    ' | paste -sd, -)"
-    printf '%s\n' "defaults${options:+,$options}"
-}
-
-fstab_entry_is_correct() {
-    local line="$1" expected="$2" source target fstype options
-    read -r source target fstype options _ <<< "$line"
-    [[ "$fstype" == btrfs ]] || return 1
-    [[ ",$options," == *",subvol=/$expected,"* ]] || return 1
-    [[ "$source" == "UUID=$ROOT_UUID" || "$source" == "$ROOT_DEVICE" ]]
-}
-
-verify_fstab() {
-    local file="$1"; shift
-    local subvol target line
-    local -a found
-    while (( $# >= 2 )); do
-        subvol="$1"; target="$2"; shift 2
-        mapfile -t found < <(awk -v target="$target" '!/^[[:space:]]*#/ && NF && $2 == target { print }' "$file")
-        [[ ${#found[@]} -eq 1 ]] || return 1
-        line="${found[0]}"; fstab_entry_is_correct "$line" "$subvol" || return 1
-    done
-}
-
-reconcile_snapshot_store_mounts() {
-    section "Snapshot Store Mounts"
-    local options tmpfile backup store subvol target canonical existing changed=false
-    local -a stores=() verify_args=() found=()
-    mapfile -t stores < <(discover_snapshot_stores)
-    [[ ${#stores[@]} -gt 0 ]] || { ok "No snapshot store mounts required."; return; }
-    options="$(snapshot_mount_options)"; tmpfile="$(mktemp /tmp/bootprep-fstab.XXXXXX)"
-    cp -a "$FSTAB" "$tmpfile"
-
-    for store in "${stores[@]}"; do
-        IFS=$'\t' read -r subvol target <<< "$store"
-        canonical="UUID=$ROOT_UUID $target btrfs subvol=/$subvol,$options 0 0"
-        verify_args+=("$subvol" "$target")
-        mapfile -t found < <(awk -v target="$target" '!/^[[:space:]]*#/ && NF && $2 == target { print }' "$tmpfile")
-        case ${#found[@]} in
-            0) printf '%s\n' "$canonical" >> "$tmpfile"; changed=true; info "Adding $target" ;;
-            1)
-                existing="${found[0]}"
-                if ! fstab_entry_is_correct "$existing" "$subvol"; then
-                    awk -v target="$target" -v replacement="$canonical" '
-                        !/^[[:space:]]*#/ && NF && $2 == target { if (!done++) print replacement; next }
-                        { print }
-                    ' "$tmpfile" > "${tmpfile}.new"
-                    mv "${tmpfile}.new" "$tmpfile"; changed=true; info "Replacing $target"
-                fi ;;
-            *) die "Multiple active fstab entries found for $target." ;;
-        esac
-    done
-
-    verify_fstab "$tmpfile" "${verify_args[@]}" || die "Snapshot store mount validation failed."
-    if [[ "$changed" == false ]]; then
-        rm -f "$tmpfile"
-        ok "Snapshot store mounts verified."
-        return
-    fi
-    mkdir -p "$BACKUP_DIR"; backup="$BACKUP_DIR/fstab.$(date +%Y%m%d-%H%M%S)"
-    cp -a "$FSTAB" "$backup"; cp -a "$tmpfile" "$FSTAB"
-    if ! verify_fstab "$FSTAB" "${verify_args[@]}"; then
-        cp -a "$backup" "$FSTAB"
-        rm -f "$tmpfile"
-        die "fstab update failed and was restored."
-    fi
-    rm -f "$tmpfile"
+reconcile_subvolume_mounts() {
+    section "Subvolume Mounts"
+    # shellcheck source=bootprep-reconcile.sh
+    source "$SUBVOLUME_SOURCE"
+    bp_reconcile_subvolumes / "$BASE_SUBVOL" "$ROOT_SUBVOL" "$ROOT_UUID" "$BACKUP_DIR"
     command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload
-    printf 'Backup : %s\n' "$backup"; ok "Snapshot store mounts reconciled."
+    info "New persistent mounts take effect on reboot."
 }
 
 install_components() {
     section "Install BootPrep Components"
+    install -Dm644 "$LOG_SOURCE" "$LOG_DEST"
+    cmp -s "$LOG_SOURCE" "$LOG_DEST" || die "Installed logging helper verification failed."
+    install -Dm644 "$SUBVOLUME_SOURCE" "$SUBVOLUME_DEST"
+    cmp -s "$SUBVOLUME_SOURCE" "$SUBVOLUME_DEST" || die "Installed subvolume helper verification failed."
     install -Dm755 "$BOOTPREP_SOURCE" "$BOOTPREP_DEST"
     install -Dm755 "$BTRFS_SOURCE" "$BTRFS_DEST"
     install -Dm755 "$SNAPPER_SOURCE" "$SNAPPER_DEST"
@@ -237,16 +197,16 @@ install_components() {
 }
 
 main() {
-    section "BootPrep 2.0.1"
+    section "BootPrep 2.1.0"
     require_root
     require_fresh_installation
     validate_environment
     prepare_grub_layout
     discover_btrfs_layout
-    reconcile_snapshot_store_mounts
+    reconcile_subvolume_mounts
     install_components
     section "Result"
-    ok "BootPrep 2.0.1 installed successfully."
+    ok "BootPrep 2.1.0 installed successfully."
 }
 
 main "$@"

@@ -10,3 +10,7 @@
 *.zip
 *.tar
 *.tar.gz
+
+# Python bytecode
+__pycache__/
+*.py[cod]

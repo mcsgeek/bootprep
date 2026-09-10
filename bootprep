@@ -5,7 +5,7 @@
 # Boot preparation engine for GRUB-based Linux systems using Snapper with a
 # nested Btrfs snapshot layout.
 #
-# Version: 2.0.1
+# Version: 2.1.0
 # License: GPL-3.0-or-later
 #
 # Copyright (C) 2026 Scott McClain
@@ -13,12 +13,21 @@
 
 set -euo pipefail
 
+# Wrap once so nested installer/engine calls share the same bounded run log.
+if [[ $EUID -eq 0 && "${BOOTPREP_LOG_ACTIVE:-}" != 1 ]]; then
+    command -v python3 >/dev/null 2>&1 || { echo "Please install Python 3 for BootPrep logging." >&2; exit 1; }
+    BOOTPREP_LOG_HELPER="/usr/lib/bootprep/bootprep-log.py"
+    [[ -f "$BOOTPREP_LOG_HELPER" ]] || { echo "Missing BootPrep logging helper: $BOOTPREP_LOG_HELPER" >&2; exit 1; }
+    exec python3 "$BOOTPREP_LOG_HELPER" /bin/bash "${BASH_SOURCE[0]}" "$@"
+fi
+
+
 ###############################################################################
 # Global State
 ###############################################################################
 
 PROGRAM="bootprep"
-VERSION="2.0.1"
+VERSION="2.1.0"
 
 DEBUG="${DEBUG:-false}"
 
@@ -96,7 +105,7 @@ validate() {
         || die "/boot/efi is not mounted."
 
     local command
-    for command in awk btrfs chroot findmnt mount mountpoint paste sed umount; do
+    for command in awk btrfs chroot findmnt mount mountpoint paste sed umount systemd-escape cmp sync; do
         command -v "$command" >/dev/null 2>&1 \
             || die "Required command not found: $command"
     done
@@ -188,6 +197,27 @@ mount_snapshot() {
     return 0
 }
 
+mount_bootprep_state() {
+    local target="$MOUNTPOINT/var/lib/bootprep"
+
+    # If /var/lib/bootprep is part of the root filesystem, the selected
+    # snapshot already contains its own BootPrep state. Preserve the
+    # existing behavior and do not add another mount.
+    mountpoint -q /var/lib/bootprep 2>/dev/null || return 0
+
+    log "Mounting persistent BootPrep state..."
+
+    mkdir -p "$target"
+
+    mount --bind /var/lib/bootprep "$target" \
+        || transaction_fail "Failed to bind persistent BootPrep state into snapshot."
+
+    mountpoint -q "$target" \
+        || transaction_fail "Persistent BootPrep state mount could not be verified."
+
+    return 0
+}
+
 bind_runtime_filesystems() {
 
     mkdir -p "$MOUNTPOINT"/{dev,proc,sys,run}
@@ -248,300 +278,12 @@ discover_home_subvolume() {
     return 0
 }
 
-discover_snapshot_stores() {
-
-    local path
-    local root_store="${BASE_SUBVOL}/.snapshots"
-    local home_store
-
-    discover_home_subvolume
-
-    if [[ -n "$HOME_SUBVOL" ]]; then
-        home_store="${HOME_SUBVOL}/.snapshots"
-    else
-        home_store="${BASE_SUBVOL}/home/.snapshots"
-    fi
-
-    while IFS= read -r path; do
-        case "${path}" in
-            ".snapshots"|"${root_store}")
-                printf '%s\t%s\n' "${root_store}" "/.snapshots"
-                ;;
-            "${home_store}")
-                printf '%s\t%s\n' "${path}" "/home/.snapshots"
-                ;;
-        esac
-    done < <(
-        btrfs subvolume list / |
-        awk '
-            {
-                sub(/^.* path /, "")
-                if ($0 ~ /(^|\/)\.snapshots$/)
-                    print
-            }
-        '
-    )
-
-    return 0
-}
-
-snapshot_mount_options() {
-
-    local options
-
-    options="$(
-        findmnt -n -o OPTIONS / |
-        tr ',' '\n' |
-        awk '
-            $0 == "rw" || $0 == "ro" { next }
-            $0 ~ /^subvol=/ { next }
-            $0 ~ /^subvolid=/ { next }
-            $0 ~ /^space_cache=/ { next }
-            NF { print }
-        ' |
-        paste -sd, -
-    )"
-
-    if [[ -n "$options" ]]; then
-        options="defaults,$options"
-    else
-        options="defaults"
-    fi
-
-    printf '%s\n' "$options"
-}
-
-fstab_entry_is_correct() {
-
-    local line="$1"
-    local expected_subvol="$2"
-    local source
-    local _target
-    local fstype
-    local options
-
-    read -r source _target fstype options _ <<< "$line"
-
-    [[ "$fstype" == "btrfs" ]] || return 1
-    [[ ",$options," == *",subvol=/$expected_subvol,"* ]] || return 1
-
-    case "$source" in
-        "UUID=${ROOT_UUID}"|"${ROOT_DEVICE}")
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-
-    return 0
-}
-
-canonical_fstab_entry() {
-
-    local subvol="$1"
-    local mountpoint="$2"
-    local options="$3"
-
-    printf 'UUID=%s %s btrfs subvol=/%s,%s 0 0\n' \
-        "$ROOT_UUID" \
-        "$mountpoint" \
-        "$subvol" \
-        "$options"
-}
-
-reconcile_fstab_entry() {
-
-    local fstab="$1"
-    local subvol="$2"
-    local mountpoint="$3"
-    local options="$4"
-    local canonical="$5"
-    local tmpfile="$6"
-
-    local line
-    local -a matches=()
-
-    mapfile -t matches < <(
-        awk -v target="$mountpoint" '
-            /^[[:space:]]*#/ || NF == 0 { next }
-            $2 == target { print }
-        ' "$fstab"
-    )
-
-    case "${#matches[@]}" in
-        0)
-            printf '%s\n' "$canonical" >> "$tmpfile"
-            log "Adding snapshot store mount: $mountpoint"
-            ;;
-        1)
-            line="${matches[0]}"
-
-            if fstab_entry_is_correct "$line" "$subvol"; then
-                return 0
-            fi
-
-            awk -v target="$mountpoint" -v replacement="$canonical" '
-                BEGIN {
-                    replaced = 0
-                }
-
-                /^[[:space:]]*#/ || NF == 0 {
-                    print
-                    next
-                }
-
-                $2 == target {
-                    if (replaced == 0) {
-                        print replacement
-                        replaced = 1
-                    }
-                    next
-                }
-
-                {
-                    print
-                }
-
-                END {
-                    if (replaced != 1)
-                        exit 1
-                }
-            ' "$tmpfile" > "${tmpfile}.new" \
-                || transaction_fail "Unable to replace the fstab entry for $mountpoint."
-
-            mv "${tmpfile}.new" "$tmpfile"
-            log "Replacing snapshot store mount: $mountpoint"
-            ;;
-        *)
-            transaction_fail "Multiple active fstab entries found for $mountpoint."
-            ;;
-    esac
-
-    return 0
-}
-
-verify_reconciled_fstab() {
-
-    local fstab="$1"
-    shift
-
-    local subvol
-    local mountpoint
-    local line
-    local -a matches=()
-
-    while (( $# >= 2 )); do
-        subvol="$1"
-        mountpoint="$2"
-        shift 2
-
-        mapfile -t matches < <(
-            awk -v target="$mountpoint" '
-                /^[[:space:]]*#/ || NF == 0 { next }
-                $2 == target { print }
-            ' "$fstab"
-        )
-
-        [[ "${#matches[@]}" -eq 1 ]] \
-            || transaction_fail "Snapshot store mount validation failed for $mountpoint."
-
-        line="${matches[0]}"
-
-        fstab_entry_is_correct "$line" "$subvol" \
-            || transaction_fail "Snapshot store mount validation failed for $mountpoint."
-    done
-
-    return 0
-}
-
-reconcile_snapshot_store_mounts() {
-
-    local target_root="$1"
-    local fstab="${target_root}/etc/fstab"
-    local options
-    local tmpfile
-    local backup_file
-    local changed=false
-    local subvol
-    local mountpoint
-    local canonical
-    local -a stores=()
-    local -a verify_args=()
-
-    [[ -f "$fstab" ]] \
-        || transaction_fail "Snapshot fstab not found."
-
-    mapfile -t stores < <(discover_snapshot_stores)
-
-    if [[ "${#stores[@]}" -eq 0 ]]; then
-        transaction_ok "No snapshot store mounts required"
-        return 0
-    fi
-
-    options="$(snapshot_mount_options)"
-    tmpfile="$(mktemp "${WORKDIR}/fstab.XXXXXX")"
-    cp -a "$fstab" "$tmpfile"
-
-    for store in "${stores[@]}"; do
-        IFS=$'\t' read -r subvol mountpoint <<< "$store"
-
-        canonical="$(canonical_fstab_entry "$subvol" "$mountpoint" "$options")"
-        verify_args+=("$subvol" "$mountpoint")
-
-        if ! awk -v target="$mountpoint" '
-            /^[[:space:]]*#/ || NF == 0 { next }
-            $2 == target { found = 1 }
-            END { exit(found ? 0 : 1) }
-        ' "$fstab"; then
-            changed=true
-        else
-            local existing_line
-            existing_line="$(
-                awk -v target="$mountpoint" '
-                    /^[[:space:]]*#/ || NF == 0 { next }
-                    $2 == target { print; exit }
-                ' "$fstab"
-            )"
-
-            if ! fstab_entry_is_correct "$existing_line" "$subvol"; then
-                changed=true
-            fi
-        fi
-
-        reconcile_fstab_entry \
-            "$fstab" \
-            "$subvol" \
-            "$mountpoint" \
-            "$options" \
-            "$canonical" \
-            "$tmpfile"
-    done
-
-    verify_reconciled_fstab "$tmpfile" "${verify_args[@]}"
-
-    if [[ "$changed" == "false" ]]; then
-        rm -f "$tmpfile"
-        transaction_ok "Snapshot store mounts verified"
-        return 0
-    fi
-
-    mkdir -p "${target_root}${BOOTPREP_BACKUP_DIR}"
-    backup_file="${target_root}${BOOTPREP_BACKUP_DIR}/fstab.$(date +%Y%m%d-%H%M%S)"
-
-    cp -a "$fstab" "$backup_file"
-    cp -a "$tmpfile" "$fstab"
-
-    verify_reconciled_fstab "$fstab" "${verify_args[@]}" \
-        || {
-            cp -a "$backup_file" "$fstab"
-            transaction_fail "Snapshot fstab update failed and was restored."
-        }
-
-    rm -f "$tmpfile"
-
-    log "fstab backup    : ${backup_file#"$target_root"}"
-    transaction_ok "Snapshot store mounts reconciled"
-    return 0
+reconcile_subvolume_mounts() {
+    local helper="/usr/lib/bootprep/bootprep-reconcile.sh"
+    [[ -f "$helper" ]] || transaction_fail "Subvolume reconciliation helper is missing; reinstall BootPrep."
+    # shellcheck source=bootprep-reconcile.sh
+    source "$helper"
+    bp_reconcile_subvolumes "$1" "$BASE_SUBVOL" "$ROOT_SUBVOL" "$ROOT_UUID" "$BOOTPREP_BACKUP_DIR"
 }
 
 ###############################################################################
@@ -696,6 +438,10 @@ cleanup() {
         umount "$MOUNTPOINT/boot" || cleanup_failed=true
     fi
 
+    if mountpoint -q "$MOUNTPOINT/var/lib/bootprep" 2>/dev/null; then
+        umount "$MOUNTPOINT/var/lib/bootprep" || cleanup_failed=true
+    fi
+
     for d in run sys proc dev; do
         if mountpoint -q "$MOUNTPOINT/$d" 2>/dev/null; then
             umount -R "$MOUNTPOINT/$d" || cleanup_failed=true
@@ -741,7 +487,8 @@ EOF
 
             discover_snapshot
             mount_snapshot
-            reconcile_snapshot_store_mounts "$MOUNTPOINT"
+            mount_bootprep_state
+            reconcile_subvolume_mounts "$MOUNTPOINT"
             bind_runtime_filesystems
             discover_efi
             prepare_grub

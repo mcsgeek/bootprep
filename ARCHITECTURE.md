@@ -44,7 +44,7 @@ The engine:
 - Validates the running Btrfs and UEFI environment.
 - Resolves the base root subvolume and exact nested snapshot path.
 - Mounts the selected snapshot and verifies that it is writable.
-- Reconciles required snapshot-store mounts in the snapshot's `fstab`.
+- Reconciles discovered independent-subvolume mounts in the snapshot's `fstab`.
 - Makes the runtime filesystems, separate `/boot`, and EFI System Partition available inside the snapshot as required.
 - Discovers a safe existing EFI bootloader ID.
 - Validates the GRUB platform target and tools inside the snapshot.
@@ -85,7 +85,7 @@ Discover base root and exact snapshot subvolume
 Mount snapshot and verify it is writable
         |
         v
-Reconcile snapshot store mounts
+Reconcile independent-subvolume mounts
         |
         v
 Bind runtime, boot, and EFI filesystems
@@ -130,17 +130,17 @@ It also validates the selected snapshot through the snapshot store mounted at:
 /.snapshots/<number>/snapshot
 ```
 
-The target must be a real Btrfs subvolume. BootPrep resolves its numeric subvolume ID and mounts by that ID, avoiding path-format differences when the running root is either the base root or an already nested snapshot. The derived base-root name is retained for snapshot-store reconciliation.
+The target must be a real Btrfs subvolume. BootPrep resolves its numeric subvolume ID and mounts by that ID, avoiding path-format differences when the running root is either the base root or an already nested snapshot. The derived base-root name is retained for independent-subvolume reconciliation.
 
 The mounted target must report `ro=false`. BootPrep refuses to prepare a read-only snapshot.
 
 ---
 
-## Snapshot Store Reconciliation
+## Independent-Subvolume Reconciliation
 
-Snapshot booting requires snapshot stores to remain available after entering a nested root snapshot.
+Snapshot booting requires independent subvolumes to remain available after entering a nested root snapshot.
 
-BootPrep discovers root and home snapshot-store subvolumes directly from Btrfs and reconciles only the corresponding entries in the target system.
+The shared `bootprep-reconcile.sh` helper inventories Btrfs subvolumes and reconciles those belonging to the stable root layout into the target system. It includes root and home snapshot stores and independently mounted application paths. It excludes historical snapshot descendants, sibling layouts, and paths beyond a separate-home boundary.
 
 The policy is conservative:
 
@@ -148,7 +148,8 @@ The policy is conservative:
 - Missing entry → Add a canonical entry.
 - Incorrect entry → Replace the complete entry.
 - Duplicate active entries → Abort safely.
-- No matching snapshot store → No action.
+- No matching independent subvolume → No action.
+- Conflicting native mount definition → Require review.
 
 Persistent mount options are derived from the running root filesystem. Runtime-only state, `subvol`, `subvolid`, and `space_cache` options are filtered before a canonical entry is generated.
 
@@ -160,7 +161,23 @@ Before modifying `fstab`, BootPrep creates a timestamped copy beneath:
 
 The replacement is verified after writing. If verification fails, the original is restored.
 
-The fresh installer performs the same reconciliation for the running system.
+The fresh installer performs the same reconciliation for the running system. The helper also recognizes a tightly verified unused vendor `/var/lib/machines.raw` compatibility unit; modified units, images, and drop-ins still require review.
+
+If `/var/lib/bootprep` is an independent mount on the running system, the engine bind-mounts it into the selected snapshot before reconciliation. This keeps logs, backups, and operational state persistent throughout activation or rollback.
+
+---
+
+## Bounded Operation Logging
+
+The `bootprep-log.py` helper wraps every privileged entry point once. It mirrors combined output to the terminal and a root-only file beneath `/var/lib/bootprep/logs`.
+
+- Each log is bounded at 1 MiB, retaining its beginning, end, and final result.
+- The ten newest logs are retained.
+- Directory, file, and lock ownership and modes are validated.
+- An exclusive lock prevents concurrent logged BootPrep operations.
+- Signals are forwarded to the wrapped process and recorded in the final result.
+
+Nested BootPrep calls inherit the active logging environment and therefore remain in the same log.
 
 ---
 
@@ -248,7 +265,7 @@ grub-install \
 
 This operation performs necessary per-snapshot work. The GRUB prefix must resolve into the newly selected nested snapshot.
 
-The GRUB prefix may be represented by an EFI-side redirect file. This configuration has been observed on tested Debian and Ubuntu installations:
+The GRUB prefix may be represented by an EFI-side redirect file. This configuration has been observed on tested Debian and Ubuntu-based installations:
 
 ```text
 set prefix=($root)'/@/.snapshots/8/snapshot/boot/grub'
@@ -288,7 +305,7 @@ The `99_bootprep` plugin is installed at:
 /usr/lib/snapper/plugins/99_bootprep
 ```
 
-It ignores non-rollback operations. For a rollback callback, Snapper supplies the resulting writable snapshot number and the plugin executes:
+It ignores every operation except `rollback-post`. For that callback, Snapper supplies the resulting writable snapshot number and the plugin executes:
 
 ```text
 /usr/sbin/bootprep prepare <snapshot-number>
@@ -347,9 +364,9 @@ All other arguments pass directly to native Btrfs. This prevents the wrapper fro
 
 `bootprep-install.sh` is fresh-install only.
 
-Before installation it checks for the installed engine, orchestrator, Snapper plugin, and known legacy component files. Any complete or partial footprint causes the installer to stop and direct the user to `bootprep-upgrade.sh`.
+Before installation it checks for the installed engine, orchestrator, Snapper plugin, shared helpers, and known legacy component files. A healthy existing installation returns success without changing files. A partial or legacy footprint stops and directs the user to `bootprep-upgrade.sh`.
 
-For an eligible system, it validates the environment, reconciles snapshot-store mounts, installs the three runtime components, and verifies them byte-for-byte.
+For an eligible system, it validates the environment, reconciles independent-subvolume mounts, installs the three entry-point components and two shared helpers, and verifies them byte-for-byte.
 
 The installer does not alter GRUB configuration or install persistent boot integration.
 
@@ -432,6 +449,8 @@ bootprep/
 ├── 99_bootprep
 ├── bootprep-install.sh
 ├── bootprep-upgrade.sh
+├── bootprep-log.py
+├── bootprep-reconcile.sh
 ├── README.md
 ├── ARCHITECTURE.md
 ├── BOOTPREP_BTRFS.md
@@ -446,6 +465,8 @@ bootprep/
 /usr/sbin/bootprep
 /usr/sbin/bootprep-btrfs
 /usr/lib/snapper/plugins/99_bootprep
+/usr/lib/bootprep/bootprep-log.py
+/usr/lib/bootprep/bootprep-reconcile.sh
 ```
 
 Backups and migration archives are stored beneath:
@@ -454,16 +475,17 @@ Backups and migration archives are stored beneath:
 /var/lib/bootprep/backups
 ```
 
-There is no v2 runtime library or next-boot state file.
+There is no next-boot selection state file. BootPrep's runtime helpers provide logging and `fstab` reconciliation without changing which snapshot will boot.
 
 ---
 
-## Version 2.0.1 Architecture
+## Version 2.1.0 Architecture
 
-BootPrep 2.0.1 uses a direct, transactional architecture:
+BootPrep 2.1.0 uses a direct, transactional architecture:
 
 - Validates the selected snapshot and makes it writable when necessary.
-- Reconciles the snapshot-store mounts required after boot.
+- Reconciles independent-subvolume mounts required after boot.
+- Preserves independently mounted BootPrep state inside the preparation environment.
 - Mounts the snapshot as a complete system root.
 - Mounts the EFI System Partition and required virtual filesystems within it.
 - Enters the prepared snapshot environment.
@@ -477,5 +499,8 @@ This architecture:
 - Requires no persistent runtime integration or next-boot state.
 - Supports EFI layouts where the GRUB prefix is stored either in a redirect file or in the EFI executable itself.
 - Keeps activation and rollback preparation within one controlled transaction.
+- Captures each privileged workflow in one bounded, root-only run log.
 
 It replaces the Version 1 architecture based on a diverted `10_linux`, a custom GRUB setting, runtime state files, and manual EFI redirect patching.
+
+The release was regression-tested independently through explicit `bootprep-btrfs activate` and native Snapper rollback on Debian, Kubuntu, TUXEDO OS, Manjaro, CachyOS, and EndeavourOS. All 12 BootPrep stages passed.
