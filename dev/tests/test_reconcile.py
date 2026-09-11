@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-HELPER = Path(__file__).resolve().parents[1] / 'bootprep-reconcile.sh'
+HELPER = Path(__file__).resolve().parents[2] / 'bootprep-reconcile.sh'
 
 def record(path, ident=265, parent='-'):
     return f'ID {ident} gen 27 top level 256 parent_uuid {parent} path {path}\n'

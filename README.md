@@ -89,6 +89,8 @@ The repository contains five entry points and two shared runtime helpers:
 
 Version 2.x does not install a GRUB runtime library, maintain next-boot state, patch `/etc/grub.d/10_linux`, or add a setting to `/etc/default/grub`.
 
+Development and regression tests are kept under `dev/`. They are not required to install, run, or operate BootPrep. See [`dev/README.md`](dev/README.md) for the local test command.
+
 ## Fresh Installation
 
 Keep all repository components together, then run:

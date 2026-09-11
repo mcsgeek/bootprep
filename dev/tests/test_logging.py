@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 
-HELPER = Path(__file__).resolve().parents[1] / 'bootprep-log.py'
+HELPER = Path(__file__).resolve().parents[2] / 'bootprep-log.py'
 spec = importlib.util.spec_from_file_location('bootprep_log', HELPER)
 logger = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(logger)

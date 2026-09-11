@@ -456,8 +456,13 @@ bootprep/
 ├── BOOTPREP_BTRFS.md
 ├── SNAPPER_PLUGIN.md
 ├── CHANGELOG.md
+├── dev/
+│   ├── README.md
+│   └── tests/
 └── LICENSE
 ```
+
+The `dev/` tree contains development and regression-verification files. It is not part of the installed or operational BootPrep layout.
 
 ## Installed Layout
 
